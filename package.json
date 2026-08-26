@@ -1,6 +1,6 @@
 {
   "name": "hoarder-extension",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Automatically archive downloadable videos and images to self-hosted services",
   "private": true,
   "license": "MIT",

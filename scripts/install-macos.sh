@@ -18,9 +18,10 @@ usage() {
 Usage:
   scripts/install-macos.sh --source-dir DIR [--config FILE] [--install-dir DIR]
   scripts/install-macos.sh --archive FILE --sha256 HASH [--config FILE] [--install-dir DIR]
-  scripts/install-macos.sh --version VERSION --sha256 HASH [options]
+  scripts/install-macos.sh --version VERSION [--sha256 HASH] [options]
 
 Options:
+  --sha256 HASH             Override the checksum published with a release.
   --release-base-url URL  Override the release download location for a fork or mirror.
 EOF
 }
@@ -102,18 +103,27 @@ if [ -n "$release_version" ]; then
   case "$release_version" in
     *[!0-9A-Za-z._-]*) echo "Invalid release version: $release_version" >&2; exit 2 ;;
   esac
-  [ -n "$expected_sha256" ] || { echo "--sha256 is required with --version" >&2; exit 2; }
   work_dir=$(mktemp -d "${TMPDIR:-/tmp}/hoarder-install.XXXXXX")
   archive_file="$work_dir/hoarder-extension-v${release_version}.zip"
   release_url="${release_base_url%/}/v${release_version}/hoarder-extension-v${release_version}.zip"
   echo "Downloading $release_url"
-  curl -fL "$release_url" -o "$archive_file"
+  curl -fsSL "$release_url" -o "$archive_file"
+  if [ -z "$expected_sha256" ]; then
+    checksum_file="$work_dir/hoarder-extension-v${release_version}.zip.sha256"
+    curl -fsSL "${release_url}.sha256" -o "$checksum_file"
+    expected_sha256=$(awk 'NR == 1 { print $1 }' "$checksum_file")
+  fi
 fi
 
 if [ -n "$archive_file" ]; then
   [ -f "$archive_file" ] || { echo "Archive not found: $archive_file" >&2; exit 1; }
   [ -n "$expected_sha256" ] || { echo "--sha256 is required with --archive" >&2; exit 2; }
-  actual_sha256=$(sha256_file "$archive_file")
+  expected_sha256=$(printf '%s' "$expected_sha256" | tr '[:upper:]' '[:lower:]')
+  printf '%s\n' "$expected_sha256" | grep -Eq '^[0-9a-f]{64}$' || {
+    echo "Invalid SHA-256: $expected_sha256" >&2
+    exit 2
+  }
+  actual_sha256=$(sha256_file "$archive_file" | tr '[:upper:]' '[:lower:]')
   [ "$actual_sha256" = "$expected_sha256" ] || {
     echo "SHA-256 mismatch for $archive_file" >&2
     exit 1

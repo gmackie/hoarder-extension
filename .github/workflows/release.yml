@@ -1,0 +1,49 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - name: Verify tag version
+        run: |
+          package_version=$(node -p "require('./package.json').version")
+          test "v${package_version}" = "$GITHUB_REF_NAME"
+      - name: Package release
+        run: |
+          version=${GITHUB_REF_NAME#v}
+          asset="hoarder-extension-v${version}.zip"
+          mkdir -p release
+          npm run build -- --output release/brave
+          (cd release && zip -qr "$asset" brave)
+          (cd release && sha256sum "$asset" > "${asset}.sha256")
+          cp scripts/install-macos.sh release/install-hoarder.sh
+          (cd release && sha256sum install-hoarder.sh > install-hoarder.sh.sha256)
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=${GITHUB_REF_NAME#v}
+          asset="hoarder-extension-v${version}.zip"
+          gh release create "$GITHUB_REF_NAME" \
+            "release/$asset" \
+            "release/${asset}.sha256" \
+            "release/install-hoarder.sh" \
+            "release/install-hoarder.sh.sha256" \
+            --verify-tag \
+            --title "Hoarder ${GITHUB_REF_NAME}" \
+            --generate-notes

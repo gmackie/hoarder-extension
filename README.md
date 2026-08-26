@@ -28,10 +28,9 @@ checksummed release in a stable per-user directory:
 
 ```sh
 curl -fsSLo install-hoarder.sh \
-  https://raw.githubusercontent.com/gmackie/hoarder-extension/main/scripts/install-macos.sh
+  https://raw.githubusercontent.com/gmackie/hoarder-extension/v1.0.4/scripts/install-macos.sh
 sh install-hoarder.sh \
-  --version 1.0.3 \
-  --sha256 4f3cd49ddc236f9b0e266218c149276794397d60e0c6f56345e2ef7f2cfc0674
+  --version 1.0.4
 ```
 
 Then open `brave://extensions`, enable **Developer mode**, choose **Load
@@ -46,10 +45,11 @@ To preconfigure targets on a new browser profile, start with
 `--config /path/to/your-config.json` to the command. The configuration is
 copied only into the local installation and is never uploaded to GitHub.
 
-Run the same command with a newer version and its published SHA-256 to update.
-The installer preserves an existing `local-config.json`; click **Reload** on
-the extension card in Brave after updating. Browser-saved target settings are
-stored in the Brave profile and are also retained.
+Run the same command with a newer version to update. The installer downloads
+and verifies the checksum published beside that release. It preserves an
+existing `local-config.json`; click **Reload** on the extension card in Brave
+after updating. Browser-saved target settings are stored in the Brave profile
+and are also retained.
 
 The installer also supports `--archive /path/to/release.zip --sha256 HASH` for
 offline use and `--release-base-url URL` for forks or release mirrors. Run

@@ -191,4 +191,42 @@ describe("macOS installer", () => {
     expect(JSON.parse(fs.readFileSync(path.join(destination, "manifest.json"))))
       .toMatchObject({ version });
   });
+
+  test("uses the checksum published beside a named release", () => {
+    const root = temporaryDirectory();
+    const releaseRoot = path.join(root, "releases", "download");
+    const bundle = path.join(root, "bundle");
+    const source = path.join(bundle, "brave");
+    const version = "5.6.7";
+    const versionDirectory = path.join(releaseRoot, `v${version}`);
+    const archiveName = `hoarder-extension-v${version}.zip`;
+    const archive = path.join(versionDirectory, archiveName);
+    const destination = path.join(root, "current");
+    fs.mkdirSync(path.join(source, "src"), { recursive: true });
+    fs.mkdirSync(versionDirectory, { recursive: true });
+    fs.writeFileSync(
+      path.join(source, "manifest.json"),
+      JSON.stringify({ name: "Hoarder", version }),
+    );
+    execFileSync("zip", ["-qr", archive, "brave"], { cwd: bundle });
+    const checksum = crypto.createHash("sha256")
+      .update(fs.readFileSync(archive))
+      .digest("hex");
+    fs.writeFileSync(
+      `${archive}.sha256`,
+      `${checksum}  ${archiveName}\n`,
+    );
+
+    runInstaller(
+      "--version",
+      version,
+      "--release-base-url",
+      `file://${releaseRoot}`,
+      "--install-dir",
+      destination,
+    );
+
+    expect(JSON.parse(fs.readFileSync(path.join(destination, "manifest.json"))))
+      .toMatchObject({ version });
+  });
 });
