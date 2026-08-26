@@ -1,7 +1,8 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8">
+  <title>Hoarder</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
@@ -13,13 +14,14 @@
     </label>
 
     <section id="status-section">
-      <p id="page-status">Checking page…</p>
+      <p id="page-status" role="status" aria-live="polite">Checking page…</p>
       <button id="archive-btn" class="primary" disabled>Archive This</button>
     </section>
 
     <section id="manual-section">
-      <input type="url" id="manual-url" placeholder="Paste any URL…">
+      <input type="url" id="manual-url" aria-label="URL to archive" placeholder="Paste any URL…">
       <button id="manual-submit">Submit</button>
+      <p id="manual-status" role="status" aria-live="polite"></p>
     </section>
 
     <details id="settings-section">
@@ -66,7 +68,7 @@
       </label>
 
       <button id="save-settings" class="primary">Save settings</button>
-      <p id="settings-status"></p>
+      <p id="settings-status" role="status" aria-live="polite"></p>
     </details>
   </main>
   <script src="popup.js" type="module"></script>

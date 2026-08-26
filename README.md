@@ -28,9 +28,9 @@ checksummed release in a stable per-user directory:
 
 ```sh
 curl -fsSLo install-hoarder.sh \
-  https://raw.githubusercontent.com/gmackie/hoarder-extension/v1.0.4/scripts/install-macos.sh
+  https://raw.githubusercontent.com/gmackie/hoarder-extension/v1.0.5/scripts/install-macos.sh
 sh install-hoarder.sh \
-  --version 1.0.4
+  --version 1.0.5
 ```
 
 Then open `brave://extensions`, enable **Developer mode**, choose **Load

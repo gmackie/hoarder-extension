@@ -30,7 +30,13 @@ h1 {
   border: 1px solid #ccc;
   border-radius: 4px;
   background: #fff;
+  color: #1a1a1a;
   font-size: 13px;
+}
+
+:where(button, input, select, summary):focus-visible {
+  outline: 3px solid #1769aa;
+  outline-offset: 2px;
 }
 
 #status-section, #manual-section, #settings-section {
@@ -49,6 +55,11 @@ button {
   background: #fff;
   cursor: pointer;
   font-size: 13px;
+  touch-action: manipulation;
+}
+
+button:hover:not(:disabled) {
+  background: #f2f2f2;
 }
 
 button.primary {
@@ -56,6 +67,10 @@ button.primary {
   color: white;
   border-color: #4CAF50;
   width: 100%;
+}
+
+button.primary:hover:not(:disabled) {
+  background: #3d8b40;
 }
 
 button.primary:disabled {
@@ -66,6 +81,7 @@ button.primary:disabled {
 
 #manual-section {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
@@ -77,10 +93,18 @@ button.primary:disabled {
   font-size: 13px;
 }
 
+#manual-status {
+  flex-basis: 100%;
+  min-height: 1em;
+  color: #666;
+  font-size: 12px;
+}
+
 details summary {
   cursor: pointer;
   color: #666;
   font-size: 13px;
+  touch-action: manipulation;
 }
 
 details label {

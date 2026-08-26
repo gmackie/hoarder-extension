@@ -12,6 +12,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   const destination = document.getElementById("destination");
   const pageStatus = document.getElementById("page-status");
   const archiveButton = document.getElementById("archive-btn");
+  const manualStatus = document.getElementById("manual-status");
 
   function renderTargetOptions() {
     destination.replaceChildren();
@@ -100,16 +101,20 @@ document.addEventListener("DOMContentLoaded", async () => {
     const input = document.getElementById("manual-url");
     const url = input.value.trim();
     if (!url) {
+      manualStatus.textContent = "Enter a URL to archive.";
       return;
     }
+    manualStatus.textContent = "Submitting…";
     try {
       const result = await chrome.runtime.sendMessage({
         type: "submit-url",
         url,
       });
-      input.value = result.ok ? "Submitted!" : `Failed: ${result.error}`;
+      manualStatus.textContent = result.ok
+        ? "Submitted!"
+        : `Failed: ${result.error}`;
     } catch (error) {
-      input.value = `Error: ${error.message}`;
+      manualStatus.textContent = `Error: ${error.message}`;
     }
   });
 
@@ -126,6 +131,13 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
 
   document.getElementById("remove-target").addEventListener("click", async () => {
+    const active = getActiveTarget(config);
+    if (
+      !active ||
+      !window.confirm(`Remove "${active.name}"? This cannot be undone.`)
+    ) {
+      return;
+    }
     const targets = config.targets.filter(
       (target) => target.id !== config.activeTargetId,
     );
