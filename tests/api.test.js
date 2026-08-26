@@ -76,6 +76,27 @@ describe("isDuplicateDownload", () => {
       ),
     ).toBe(false);
   });
+
+  it("deduplicates a Twitch clip across its short and redirected URLs", () => {
+    const twitchHistory = {
+      done: [
+        {
+          url: "https://clips.twitch.tv/FaintLightGullWholeWheat?source=share",
+          folder: "secondary/archive",
+        },
+      ],
+      queue: [],
+      pending: [],
+    };
+
+    expect(
+      isDuplicateDownload(
+        twitchHistory,
+        "https://www.twitch.tv/ea/clip/FaintLightGullWholeWheat?range=all",
+        "secondary/archive",
+      ),
+    ).toBe(true);
+  });
 });
 
 describe("checkTargetAvailability", () => {

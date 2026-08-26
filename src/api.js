@@ -46,6 +46,25 @@ export async function checkTargetAvailability(target) {
 function canonicalizeUrl(url) {
   try {
     const parsed = new URL(url);
+    const host = parsed.hostname.replace(/^www\./, "");
+    const shortTwitchClip =
+      host === "clips.twitch.tv"
+        ? parsed.pathname.match(/^\/([^/]+)/)?.[1]
+        : null;
+    const redirectedTwitchClip =
+      host === "twitch.tv" || host.endsWith(".twitch.tv")
+        ? parsed.pathname.match(/^\/[^/]+\/clip\/([^/]+)/)?.[1]
+        : null;
+    const twitchClip = shortTwitchClip || redirectedTwitchClip;
+
+    if (twitchClip) {
+      parsed.hostname = "clips.twitch.tv";
+      parsed.pathname = `/${twitchClip}`;
+      parsed.search = "";
+      parsed.hash = "";
+      return parsed.toString();
+    }
+
     const trackingParameters = new Set([
       "fbclid",
       "gclid",
@@ -58,7 +77,10 @@ function canonicalizeUrl(url) {
         parsed.searchParams.delete(key);
       }
     }
-    if (parsed.hostname.endsWith("twitch.tv") && parsed.pathname.includes("/clip/")) {
+    if (
+      parsed.hostname.endsWith("twitch.tv") &&
+      parsed.pathname.includes("/videos/")
+    ) {
       parsed.searchParams.delete("filter");
       parsed.searchParams.delete("range");
     }
