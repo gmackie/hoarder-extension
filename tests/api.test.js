@@ -4,8 +4,19 @@ import {
   buildTubeArchivistPayload,
   checkTargetAvailability,
   isDuplicateDownload,
+  submitUrl,
   uploadImage,
 } from "../src/api.js";
+
+function jsonResponse(body, status = 200) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    clone: () => jsonResponse(body, status),
+    json: async () => body,
+    text: async () => JSON.stringify(body),
+  };
+}
 
 describe("buildTubeArchivistPayload", () => {
   it("builds the TubeArchivist download payload", () => {
@@ -131,6 +142,50 @@ describe("checkTargetAvailability", () => {
     expect(globalThis.fetch).toHaveBeenCalledWith(
       "https://catalog.example.test/destinations",
     );
+  });
+});
+
+describe("submitUrl", () => {
+  beforeEach(() => {
+    globalThis.chrome = {
+      cookies: { getAll: vi.fn(async () => []) },
+      storage: {
+        local: {
+          get: vi.fn(async () => ({
+            activeTargetId: "archive",
+            targets: [
+              {
+                id: "archive",
+                name: "Archive",
+                metubeUrl: "https://downloads.example.test",
+              },
+            ],
+          })),
+          set: vi.fn(async () => {}),
+        },
+      },
+    };
+    globalThis.fetch = vi.fn(async (url) => {
+      if (url.endsWith("/history")) {
+        return jsonResponse({ done: [], queue: [], pending: [] });
+      }
+      if (url.endsWith("/add")) {
+        return jsonResponse({
+          status: "error",
+          msg: "Downloader rejected the URL",
+        });
+      }
+      return jsonResponse({ status: "ok" });
+    });
+  });
+
+  it("reports a downloader error returned in a successful HTTP response", async () => {
+    await expect(
+      submitUrl("https://media.example.test/video.mp4"),
+    ).resolves.toEqual({
+      ok: false,
+      error: "MeTube: Downloader rejected the URL",
+    });
   });
 });
 

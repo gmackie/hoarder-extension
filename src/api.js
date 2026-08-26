@@ -176,9 +176,16 @@ export async function submitUrl(url) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(buildMetubePayload(url, target)),
   });
+  const body = await response
+    .clone()
+    .json()
+    .catch(() => null);
   if (!response.ok) {
     const text = await response.text().catch(() => "");
     return { ok: false, error: `MeTube ${response.status}: ${text}` };
+  }
+  if (body?.status === "error") {
+    return { ok: false, error: `MeTube: ${body.msg || "Download failed"}` };
   }
   return { ok: true };
 }
