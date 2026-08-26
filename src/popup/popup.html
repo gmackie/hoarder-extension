@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main id="app">
+    <h1>Hoarder</h1>
+
+    <label id="destination-label">Save to
+      <select id="destination"></select>
+    </label>
+
+    <section id="status-section">
+      <p id="page-status">Checking page…</p>
+      <button id="archive-btn" class="primary" disabled>Archive This</button>
+    </section>
+
+    <section id="manual-section">
+      <input type="url" id="manual-url" placeholder="Paste any URL…">
+      <button id="manual-submit">Submit</button>
+    </section>
+
+    <details id="settings-section">
+      <summary>Archive targets and auto-save</summary>
+
+      <div class="button-row">
+        <button id="add-target" type="button">Add target</button>
+        <button id="remove-target" type="button">Remove target</button>
+      </div>
+
+      <label>Target name
+        <input type="text" id="target-name" placeholder="Home archive">
+      </label>
+      <label>MeTube URL
+        <input type="url" id="metube-url" placeholder="https://downloads.example.com">
+      </label>
+      <label>MeTube folder
+        <input type="text" id="metube-folder" placeholder="Optional subfolder">
+      </label>
+      <label>TubeArchivist URL
+        <input type="url" id="ta-url" placeholder="Optional">
+      </label>
+      <label>TubeArchivist API key
+        <input type="password" id="ta-api-key" placeholder="Optional">
+      </label>
+      <label class="checkbox-label">
+        <input type="checkbox" id="use-ta-youtube"> Use TubeArchivist for YouTube
+      </label>
+      <label>Image API URL
+        <input type="url" id="image-api-url" placeholder="Optional">
+      </label>
+      <label>Image destination key
+        <input type="text" id="image-destination" placeholder="Optional">
+      </label>
+      <label>Availability destination id
+        <input type="text" id="availability-id" placeholder="Optional fail-closed check">
+      </label>
+
+      <label class="checkbox-label">
+        <input type="checkbox" id="auto-save"> Automatically save detected videos
+      </label>
+      <label>Auto-save delay (seconds)
+        <input type="number" id="auto-save-delay" min="0" max="300" value="10">
+      </label>
+
+      <button id="save-settings" class="primary">Save settings</button>
+      <p id="settings-status"></p>
+    </details>
+  </main>
+  <script src="popup.js" type="module"></script>
+</body>
+</html>

@@ -1,0 +1,20 @@
+{
+  "name": "hoarder-extension",
+  "version": "1.0.0",
+  "description": "Automatically archive downloadable videos and images to self-hosted services",
+  "private": true,
+  "license": "MIT",
+  "repository": "github:gmackie/hoarder-extension",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "build": "node build.js",
+    "lint": "eslint src/ tests/",
+    "check": "npm run lint && npm test && npm run build"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.9.1",
+    "vitest": "^4.1.11"
+  }
+}

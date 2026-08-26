@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 2,
+  "activeTargetId": "home-archive",
+  "autoSaveEnabled": false,
+  "autoSaveDelaySeconds": 10,
+  "targets": [
+    {
+      "id": "home-archive",
+      "name": "Home archive",
+      "metubeUrl": "https://downloads.example.com",
+      "metubeFolder": "",
+      "tubeArchivistUrl": "",
+      "tubeArchivistApiKey": "",
+      "useTubeArchivistForYouTube": false,
+      "imageApiUrl": "",
+      "imageDestination": "",
+      "availabilityId": ""
+    }
+  ]
+}
