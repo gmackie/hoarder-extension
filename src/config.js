@@ -123,11 +123,33 @@ export function normalizeConfig(stored = {}) {
 
 export async function getConfig() {
   const stored = await chrome.storage.local.get(null);
+  if (!Array.isArray(stored.targets)) {
+    const bundledConfig = await loadBundledConfig();
+    if (bundledConfig?.targets.length) {
+      await chrome.storage.local.set(bundledConfig);
+      return bundledConfig;
+    }
+  }
   const config = normalizeConfig(stored);
   if (!Array.isArray(stored.targets) && stored.nasBaseUrl) {
     await chrome.storage.local.set(config);
   }
   return config;
+}
+
+async function loadBundledConfig() {
+  if (!chrome.runtime?.getURL) {
+    return null;
+  }
+  try {
+    const response = await fetch(chrome.runtime.getURL("local-config.json"));
+    if (!response.ok) {
+      return null;
+    }
+    return normalizeConfig(await response.json());
+  } catch {
+    return null;
+  }
 }
 
 export async function saveConfig(changes) {

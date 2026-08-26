@@ -23,6 +23,33 @@ describe("portable archive configuration", () => {
     expect(config.autoSaveEnabled).toBe(false);
   });
 
+  it("bootstraps an empty profile from an ignored local config file", async () => {
+    globalThis.chrome.runtime = {
+      getURL: vi.fn(() => "chrome-extension://id/local-config.json"),
+    };
+    globalThis.fetch = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        activeTargetId: "home",
+        autoSaveEnabled: true,
+        targets: [
+          {
+            id: "home",
+            name: "Home",
+            metubeUrl: "http://media.internal:8081",
+          },
+        ],
+      }),
+    }));
+    const { getConfig } = await import("../src/config.js");
+
+    const config = await getConfig();
+
+    expect(config.activeTargetId).toBe("home");
+    expect(config.autoSaveEnabled).toBe(true);
+    expect(globalThis.chrome.storage.local.set).toHaveBeenCalledWith(config);
+  });
+
   it("normalizes arbitrary user-defined targets", async () => {
     const { normalizeConfig, getActiveTarget } = await import(
       "../src/config.js"

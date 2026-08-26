@@ -19,4 +19,9 @@ for (const entry of ["manifest.json", "src", "icons"]) {
   });
 }
 
+const localConfig = path.resolve("local-config.json");
+if (fs.existsSync(localConfig)) {
+  fs.copyFileSync(localConfig, path.join(outputDir, "local-config.json"));
+}
+
 console.log(`Built unpacked Brave extension at ${outputDir}`);

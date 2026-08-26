@@ -59,7 +59,10 @@ targets with the same MeTube URL and different folder values. Bind-mount each
 folder to the desired storage location in the MeTube container.
 
 `config.example.json` documents the stored configuration schema. Secrets are
-intentionally blank.
+intentionally blank. For repeatable preconfiguration, copy it to
+`local-config.json` before running the build. That ignored file is bundled into
+your local build and imported only when the browser profile has no saved target
+configuration.
 
 ## Automatic video saving
 
