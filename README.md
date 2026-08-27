@@ -32,9 +32,9 @@ checksummed release in a stable per-user directory:
 
 ```sh
 curl -fsSLo install-hoarder.sh \
-  https://raw.githubusercontent.com/gmackie/hoarder-extension/v1.0.11/scripts/install-macos.sh
+  https://raw.githubusercontent.com/gmackie/hoarder-extension/v1.0.12/scripts/install-macos.sh
 sh install-hoarder.sh \
-  --version 1.0.11 \
+  --version 1.0.12 \
   --enable-auto-update
 ```
 
@@ -42,7 +42,7 @@ Then open `brave://extensions`, enable **Developer mode**, choose **Load
 unpacked**, and select:
 
 ```text
-~/Library/Application Support/Hoarder Extension/current
+~/Applications/Hoarder Extension/current
 ```
 
 To preconfigure targets on a new browser profile, start with
@@ -64,7 +64,7 @@ when no URL submission is active. The first auto-update-capable release must be
 installed once with the command above and reloaded in Brave; later releases
 require no manual reload.
 
-Keep the auto-updated extension in the installer's default Application Support
+Keep the auto-updated extension in the installer's default Applications
 directory. macOS privacy controls block unattended LaunchAgents from extension
 directories under Desktop, Documents, or Downloads, so the installer refuses
 to enable automatic updates for those locations.
@@ -73,7 +73,7 @@ The updater is configurable for other users and forks:
 
 ```sh
 sh install-hoarder.sh \
-  --version 1.0.11 \
+  --version 1.0.12 \
   --enable-auto-update \
   --repository owner/hoarder-extension \
   --release-base-url https://github.com/owner/hoarder-extension/releases/download \

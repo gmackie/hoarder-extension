@@ -2,7 +2,7 @@
 
 set -eu
 
-install_dir="${HOME}/Library/Application Support/Hoarder Extension/current"
+install_dir="${HOME}/Applications/Hoarder Extension/current"
 repository="gmackie/hoarder-extension"
 release_base_url=""
 latest_version=""

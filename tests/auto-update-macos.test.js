@@ -61,6 +61,34 @@ function runUpdater(...arguments_) {
 }
 
 describe("macOS automatic updater", () => {
+  test("checks the Brave-picker-visible Applications directory by default", () => {
+    const root = temporaryDirectory();
+    const installDirectory = path.join(
+      root,
+      "Applications",
+      "Hoarder Extension",
+      "current",
+    );
+    fs.mkdirSync(installDirectory, { recursive: true });
+    fs.writeFileSync(
+      path.join(installDirectory, "manifest.json"),
+      JSON.stringify({ name: "Hoarder", version: "1.0.7" }),
+    );
+
+    const result = spawnSync(
+      "sh",
+      ["scripts/auto-update-macos.sh", "--latest-version", "1.0.7"],
+      {
+        cwd: path.resolve(import.meta.dirname, ".."),
+        encoding: "utf8",
+        env: { ...process.env, HOME: root },
+      },
+    );
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain("Hoarder 1.0.7 is current");
+  });
+
   test("installs a newer checksummed release and preserves configuration", () => {
     const root = temporaryDirectory();
     const installDirectory = path.join(root, "current");

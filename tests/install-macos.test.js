@@ -27,6 +27,36 @@ function runInstaller(...arguments_) {
 }
 
 describe("macOS installer", () => {
+  test("defaults to a Brave-picker-visible Applications directory", () => {
+    const root = temporaryDirectory();
+    const source = path.join(root, "source");
+    const destination = path.join(
+      root,
+      "Applications",
+      "Hoarder Extension",
+      "current",
+    );
+    fs.mkdirSync(source, { recursive: true });
+    fs.writeFileSync(
+      path.join(source, "manifest.json"),
+      JSON.stringify({ name: "Hoarder", version: "9.8.7" }),
+    );
+
+    const result = spawnSync(
+      "sh",
+      ["scripts/install-macos.sh", "--source-dir", source],
+      {
+        cwd: path.resolve(import.meta.dirname, ".."),
+        encoding: "utf8",
+        env: { ...process.env, HOME: root },
+      },
+    );
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(fs.existsSync(path.join(destination, "manifest.json"))).toBe(true);
+    expect(result.stdout).toContain(destination);
+  });
+
   test("stages an unpacked extension from a local build directory", () => {
     const root = temporaryDirectory();
     const source = path.join(root, "source");
