@@ -1,9 +1,10 @@
 {
   "manifest_version": 3,
   "name": "Hoarder",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "Automatically archive downloadable videos and images to your own services",
   "permissions": [
+    "alarms",
     "cookies",
     "contextMenus",
     "activeTab",

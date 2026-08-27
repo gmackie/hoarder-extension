@@ -4,6 +4,8 @@ import { getConfig } from "./config.js";
 import { findDownloadableVideo } from "./detection.js";
 
 const inFlightUrls = new Set();
+let activeSubmissions = 0;
+const reloadUpdatedExtensionAlarm = "reload-updated-extension";
 const actionIcons = {
   idle: {
     16: "icons/icon-16.png",
@@ -57,6 +59,7 @@ async function setActionIcon(state, tabId) {
 
 async function submitUrlWithActionState(url, tabId) {
   await setActionIcon("saving", tabId);
+  activeSubmissions += 1;
   try {
     const result = await submitUrl(url);
     await setActionIcon(result.ok ? "saved" : "failed", tabId);
@@ -64,8 +67,39 @@ async function submitUrlWithActionState(url, tabId) {
   } catch (error) {
     await setActionIcon("failed", tabId);
     throw error;
+  } finally {
+    activeSubmissions -= 1;
   }
 }
+
+async function ensureReloadUpdatedExtensionAlarm() {
+  const existing = await chrome.alarms.get(reloadUpdatedExtensionAlarm);
+  if (!existing) {
+    await chrome.alarms.create(reloadUpdatedExtensionAlarm, {
+      periodInMinutes: 15,
+    });
+  }
+}
+
+ensureReloadUpdatedExtensionAlarm();
+chrome.alarms.onAlarm.addListener(async (alarm) => {
+  if (alarm.name !== reloadUpdatedExtensionAlarm || activeSubmissions > 0) {
+    return;
+  }
+  try {
+    const manifestUrl = `${chrome.runtime.getURL("manifest.json")}?update_check=${Date.now()}`;
+    const response = await fetch(manifestUrl, { cache: "no-store" });
+    if (!response.ok) {
+      return;
+    }
+    const installedManifest = await response.json();
+    if (installedManifest.version !== chrome.runtime.getManifest().version) {
+      chrome.runtime.reload();
+    }
+  } catch {
+    // The next alarm will retry after transient filesystem or browser errors.
+  }
+});
 
 chrome.runtime.onInstalled.addListener(async () => {
   await chrome.contextMenus.removeAll();

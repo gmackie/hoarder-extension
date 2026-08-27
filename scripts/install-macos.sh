@@ -6,9 +6,16 @@ source_dir=""
 archive_file=""
 expected_sha256=""
 release_version=""
-release_base_url="https://github.com/gmackie/hoarder-extension/releases/download"
+repository="gmackie/hoarder-extension"
+release_base_url=""
 config_file=""
 install_dir="${HOME}/Library/Application Support/Hoarder Extension/current"
+enable_auto_update=false
+disable_auto_update=false
+update_interval_hours=6
+updater_dir="${HOME}/Library/Application Support/Hoarder Extension/updater"
+launch_agents_dir="${HOME}/Library/LaunchAgents"
+start_updater=true
 work_dir=""
 stage_dir=""
 backup_dir=""
@@ -22,7 +29,11 @@ Usage:
 
 Options:
   --sha256 HASH             Override the checksum published with a release.
-  --release-base-url URL  Override the release download location for a fork or mirror.
+  --release-base-url URL    Override release downloads for a fork or mirror.
+  --enable-auto-update      Install a per-user automatic update agent.
+  --disable-auto-update     Unload and remove the automatic update agent.
+  --repository OWNER/REPO   GitHub repository used to discover new releases.
+  --update-interval-hours N Check for updates every N hours (default: 6).
 EOF
 }
 
@@ -37,6 +48,99 @@ sha256_file() {
   else
     sha256sum "$1" | awk '{print $1}'
   fi
+}
+
+xml_escape() {
+  printf '%s' "$1" | sed \
+    -e 's/&/\&amp;/g' \
+    -e 's/</\&lt;/g' \
+    -e 's/>/\&gt;/g' \
+    -e 's/"/\&quot;/g' \
+    -e "s/'/\&apos;/g"
+}
+
+valid_repository() {
+  case "$1" in
+    ''|/*|*/|*/*/*|*[!A-Za-z0-9._/-]*) return 1 ;;
+    */*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+install_auto_updater() {
+  updater_source="$install_dir/scripts/auto-update-macos.sh"
+  [ -f "$updater_source" ] || {
+    echo "Automatic updater is missing from the extension package" >&2
+    exit 1
+  }
+
+  mkdir -p "$updater_dir" "$launch_agents_dir"
+  updater_script="$updater_dir/auto-update-macos.sh"
+  cp "$updater_source" "$updater_script"
+  chmod 755 "$updater_script"
+
+  label="com.hoarder-extension.auto-update"
+  plist="$launch_agents_dir/${label}.plist"
+  plist_stage="${plist}.staging.$$"
+  interval_seconds=$((update_interval_hours * 3600))
+  escaped_updater=$(xml_escape "$updater_script")
+  escaped_install=$(xml_escape "$install_dir")
+  escaped_repository=$(xml_escape "$repository")
+  escaped_release_base=$(xml_escape "$release_base_url")
+  escaped_log=$(xml_escape "$updater_dir/auto-update.log")
+  cat > "$plist_stage" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>$label</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/sh</string>
+    <string>$escaped_updater</string>
+    <string>--install-dir</string>
+    <string>$escaped_install</string>
+    <string>--repository</string>
+    <string>$escaped_repository</string>
+    <string>--release-base-url</string>
+    <string>$escaped_release_base</string>
+    <string>--refresh-script</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StartInterval</key>
+  <integer>$interval_seconds</integer>
+  <key>StandardOutPath</key>
+  <string>$escaped_log</string>
+  <key>StandardErrorPath</key>
+  <string>$escaped_log</string>
+</dict>
+</plist>
+EOF
+  chmod 644 "$plist_stage"
+  mv "$plist_stage" "$plist"
+
+  if [ "$start_updater" = true ]; then
+    command -v launchctl >/dev/null 2>&1 || {
+      echo "launchctl is required to enable automatic updates" >&2
+      exit 1
+    }
+    launch_domain="gui/$(id -u)"
+    launchctl bootout "$launch_domain" "$plist" >/dev/null 2>&1 || true
+    launchctl bootstrap "$launch_domain" "$plist"
+  fi
+  echo "Automatic updates enabled every $update_interval_hours hour(s)."
+}
+
+disable_auto_updater() {
+  label="com.hoarder-extension.auto-update"
+  plist="$launch_agents_dir/${label}.plist"
+  if [ "$start_updater" = true ] && command -v launchctl >/dev/null 2>&1; then
+    launchctl bootout "gui/$(id -u)" "$plist" >/dev/null 2>&1 || true
+  fi
+  rm -f "$plist" "$updater_dir/auto-update-macos.sh"
+  echo "Automatic updates disabled."
 }
 
 while [ "$#" -gt 0 ]; do
@@ -66,6 +170,38 @@ while [ "$#" -gt 0 ]; do
       release_base_url=$2
       shift 2
       ;;
+    --enable-auto-update)
+      enable_auto_update=true
+      shift
+      ;;
+    --disable-auto-update)
+      disable_auto_update=true
+      shift
+      ;;
+    --repository)
+      [ "$#" -ge 2 ] || { usage >&2; exit 2; }
+      repository=$2
+      shift 2
+      ;;
+    --update-interval-hours)
+      [ "$#" -ge 2 ] || { usage >&2; exit 2; }
+      update_interval_hours=$2
+      shift 2
+      ;;
+    --updater-dir)
+      [ "$#" -ge 2 ] || { usage >&2; exit 2; }
+      updater_dir=$2
+      shift 2
+      ;;
+    --launch-agents-dir)
+      [ "$#" -ge 2 ] || { usage >&2; exit 2; }
+      launch_agents_dir=$2
+      shift 2
+      ;;
+    --no-start-updater)
+      start_updater=false
+      shift
+      ;;
     --install-dir)
       [ "$#" -ge 2 ] || { usage >&2; exit 2; }
       install_dir=$2
@@ -87,6 +223,30 @@ while [ "$#" -gt 0 ]; do
       ;;
   esac
 done
+
+valid_repository "$repository" || {
+  echo "Invalid GitHub repository: $repository" >&2
+  exit 2
+}
+printf '%s\n' "$update_interval_hours" | grep -Eq '^[0-9]+$' || {
+  echo "Invalid update interval: $update_interval_hours" >&2
+  exit 2
+}
+[ "$update_interval_hours" -ge 1 ] && [ "$update_interval_hours" -le 168 ] || {
+  echo "Update interval must be between 1 and 168 hours" >&2
+  exit 2
+}
+if [ -z "$release_base_url" ]; then
+  release_base_url="https://github.com/${repository}/releases/download"
+fi
+[ "$enable_auto_update" = false ] || [ "$disable_auto_update" = false ] || {
+  echo "Choose only one of --enable-auto-update or --disable-auto-update" >&2
+  exit 2
+}
+if [ "$disable_auto_update" = true ]; then
+  disable_auto_updater
+  exit 0
+fi
 
 [ -z "$source_dir" ] || { [ -z "$archive_file" ] && [ -z "$release_version" ]; } || {
   echo "Choose only one of --source-dir, --archive, or --version" >&2
@@ -146,6 +306,10 @@ fi
   echo "Configuration file not found: $config_file" >&2
   exit 1
 }
+[ "$enable_auto_update" = false ] || [ -f "$source_dir/scripts/auto-update-macos.sh" ] || {
+  echo "Automatic updater is missing from the extension package" >&2
+  exit 1
+}
 
 parent_dir=$(dirname "$install_dir")
 stage_dir="${install_dir}.staging.$$"
@@ -175,3 +339,6 @@ trap - EXIT HUP INT TERM
 
 echo "Hoarder is staged at: $install_dir"
 echo "Open brave://extensions, enable Developer mode, and choose Load unpacked."
+if [ "$enable_auto_update" = true ]; then
+  install_auto_updater
+fi

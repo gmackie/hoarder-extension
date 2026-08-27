@@ -19,6 +19,12 @@ for (const entry of ["manifest.json", "src", "icons"]) {
   });
 }
 
+fs.mkdirSync(path.join(outputDir, "scripts"), { recursive: true });
+fs.copyFileSync(
+  path.resolve("scripts/auto-update-macos.sh"),
+  path.join(outputDir, "scripts/auto-update-macos.sh"),
+);
+
 const localConfig = path.resolve("local-config.json");
 if (fs.existsSync(localConfig)) {
   fs.copyFileSync(localConfig, path.join(outputDir, "local-config.json"));

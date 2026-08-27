@@ -46,4 +46,18 @@ describe("Brave build", () => {
       }
     }
   });
+
+  it("packages the macOS updater with the unpacked extension", async () => {
+    outputDir = await mkdtemp(join(tmpdir(), "hoarder-build-"));
+    const result = spawnSync(
+      process.execPath,
+      ["build.js", "--output", outputDir],
+      { cwd: new URL("..", import.meta.url), encoding: "utf8" },
+    );
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(
+      await readFile(join(outputDir, "scripts", "auto-update-macos.sh"), "utf8"),
+    ).toContain("#!/bin/sh");
+  });
 });

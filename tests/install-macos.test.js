@@ -229,4 +229,84 @@ describe("macOS installer", () => {
     expect(JSON.parse(fs.readFileSync(path.join(destination, "manifest.json"))))
       .toMatchObject({ version });
   });
+
+  test("installs a configurable per-user automatic update agent", () => {
+    const root = temporaryDirectory();
+    const source = path.join(root, "source");
+    const destination = path.join(root, "Hoarder Extension", "current");
+    const updaterDirectory = path.join(root, "updater");
+    const launchAgentsDirectory = path.join(root, "LaunchAgents");
+    fs.mkdirSync(path.join(source, "scripts"), { recursive: true });
+    fs.writeFileSync(
+      path.join(source, "manifest.json"),
+      JSON.stringify({ name: "Hoarder", version: "6.0.0" }),
+    );
+    fs.writeFileSync(
+      path.join(source, "scripts", "auto-update-macos.sh"),
+      "#!/bin/sh\necho updater\n",
+    );
+
+    const output = runInstaller(
+      "--source-dir",
+      source,
+      "--install-dir",
+      destination,
+      "--enable-auto-update",
+      "--repository",
+      "example/hoarder-extension",
+      "--update-interval-hours",
+      "2",
+      "--updater-dir",
+      updaterDirectory,
+      "--launch-agents-dir",
+      launchAgentsDirectory,
+      "--no-start-updater",
+    );
+
+    const updater = path.join(updaterDirectory, "auto-update-macos.sh");
+    const plist = path.join(
+      launchAgentsDirectory,
+      "com.hoarder-extension.auto-update.plist",
+    );
+    expect(fs.readFileSync(updater, "utf8")).toContain("echo updater");
+    const launchAgent = fs.readFileSync(plist, "utf8");
+    expect(launchAgent).toContain(destination);
+    expect(launchAgent).toContain("example/hoarder-extension");
+    expect(launchAgent).toContain("<integer>7200</integer>");
+    expect(output).toContain("Automatic updates enabled");
+  });
+
+  test("can disable the per-user automatic update agent", () => {
+    const root = temporaryDirectory();
+    const updaterDirectory = path.join(root, "updater");
+    const launchAgentsDirectory = path.join(root, "LaunchAgents");
+    const updater = path.join(updaterDirectory, "auto-update-macos.sh");
+    const plist = path.join(
+      launchAgentsDirectory,
+      "com.hoarder-extension.auto-update.plist",
+    );
+    fs.mkdirSync(updaterDirectory, { recursive: true });
+    fs.mkdirSync(launchAgentsDirectory, { recursive: true });
+    fs.writeFileSync(updater, "#!/bin/sh\n");
+    fs.writeFileSync(plist, "plist");
+
+    const result = spawnSync(
+      "sh",
+      [
+        "scripts/install-macos.sh",
+        "--disable-auto-update",
+        "--updater-dir",
+        updaterDirectory,
+        "--launch-agents-dir",
+        launchAgentsDirectory,
+        "--no-start-updater",
+      ],
+      { cwd: path.resolve(import.meta.dirname, ".."), encoding: "utf8" },
+    );
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(fs.existsSync(updater)).toBe(false);
+    expect(fs.existsSync(plist)).toBe(false);
+    expect(result.stdout).toContain("Automatic updates disabled");
+  });
 });

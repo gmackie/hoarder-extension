@@ -13,6 +13,7 @@ switch the active target at any time.
 - Optional automatic saving of detected video pages and direct media URLs.
 - Toolbar icons show when a submission is pending, accepted, or failed.
 - A popup link opens the active target's download queue or dashboard.
+- Optional checksummed automatic updates on macOS.
 - Multiple named archive targets with independent service URLs and folders.
 - MeTube support for arbitrary download folders.
 - Optional TubeArchivist routing for YouTube.
@@ -30,9 +31,10 @@ checksummed release in a stable per-user directory:
 
 ```sh
 curl -fsSLo install-hoarder.sh \
-  https://raw.githubusercontent.com/gmackie/hoarder-extension/v1.0.6/scripts/install-macos.sh
+  https://raw.githubusercontent.com/gmackie/hoarder-extension/v1.0.7/scripts/install-macos.sh
 sh install-hoarder.sh \
-  --version 1.0.6
+  --version 1.0.7 \
+  --enable-auto-update
 ```
 
 Then open `brave://extensions`, enable **Developer mode**, choose **Load
@@ -52,6 +54,31 @@ and verifies the checksum published beside that release. It preserves an
 existing `local-config.json`; click **Reload** on the extension card in Brave
 after updating. Browser-saved target settings are stored in the Brave profile
 and are also retained.
+
+With `--enable-auto-update`, a per-user macOS LaunchAgent checks the latest
+GitHub release every six hours. It downloads a checksummed installer, which in
+turn verifies the extension archive before replacing the unpacked files. The
+extension notices a new on-disk manifest within 15 minutes and reloads only
+when no URL submission is active. The first auto-update-capable release must be
+installed once with the command above and reloaded in Brave; later releases
+require no manual reload.
+
+The updater is configurable for other users and forks:
+
+```sh
+sh install-hoarder.sh \
+  --version 1.0.7 \
+  --enable-auto-update \
+  --repository owner/hoarder-extension \
+  --release-base-url https://github.com/owner/hoarder-extension/releases/download \
+  --update-interval-hours 12
+```
+
+To turn it off without changing the installed extension:
+
+```sh
+sh install-hoarder.sh --disable-auto-update
+```
 
 The installer also supports `--archive /path/to/release.zip --sha256 HASH` for
 offline use and `--release-base-url URL` for forks or release mirrors. Run
