@@ -1,4 +1,5 @@
 import mimetypes
+import asyncio
 from collections.abc import AsyncIterator, Mapping, Sequence
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -6,13 +7,14 @@ from typing import Any, Literal
 
 from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Query, status
 from fastapi.responses import FileResponse, Response, StreamingResponse
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import create_engine
 
 from .catalog import Catalog
 
 WorkflowState = Literal["inbox", "candidate", "reviewed", "selected", "archived"]
 ChannelItemStatus = Literal["candidate", "reviewed", "selected", "used", "rejected"]
+AudioFormat = Literal["m4a", "opus", "flac"]
 
 
 class EditorialPatch(BaseModel):
@@ -80,16 +82,85 @@ class CuratedChannelItemPatch(BaseModel):
         return value
 
 
+class AudioExtractionCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=1024)
+    artist: str = Field(default="", max_length=300)
+    release: str = Field(default="", max_length=500)
+    year: int | None = Field(default=None, ge=1000, le=9999)
+    track_number: int | None = Field(default=None, ge=1, le=999)
+    genre: str = Field(default="", max_length=200)
+    tags: list[str] = Field(default_factory=list, max_length=50)
+    start_ms: int = Field(default=0, ge=0)
+    end_ms: int | None = Field(default=None, gt=0)
+    format: AudioFormat = "m4a"
+    bitrate_kbps: int = Field(default=256, ge=64, le=512)
+
+    @field_validator("title")
+    @classmethod
+    def validate_title(cls, title: str) -> str:
+        if not title.strip():
+            raise ValueError("Track title cannot be blank")
+        return title
+
+    @field_validator("tags")
+    @classmethod
+    def validate_music_tags(cls, tags: list[str]) -> list[str]:
+        if any(len(tag.strip()) > 120 for tag in tags):
+            raise ValueError("Tags must be 120 characters or fewer")
+        return tags
+
+    @model_validator(mode="after")
+    def validate_range(self):
+        if self.end_ms is not None and self.end_ms <= self.start_ms:
+            raise ValueError("End time must be after start time")
+        return self
+
+
+class TrackPatch(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=1024)
+    artist: str | None = Field(default=None, max_length=300)
+    release: str | None = Field(default=None, max_length=500)
+    year: int | None = Field(default=None, ge=1000, le=9999)
+    track_number: int | None = Field(default=None, ge=1, le=999)
+    genre: str | None = Field(default=None, max_length=200)
+    tags: list[str] | None = Field(default=None, max_length=50)
+
+    @field_validator("title")
+    @classmethod
+    def validate_optional_title(cls, title: str | None) -> str | None:
+        if title is None or not title.strip():
+            raise ValueError("Track title cannot be blank")
+        return title
+
+    @field_validator("tags")
+    @classmethod
+    def validate_optional_tags(cls, tags: list[str] | None) -> list[str] | None:
+        if tags is not None and any(len(tag.strip()) > 120 for tag in tags):
+            raise ValueError("Tags must be 120 characters or fewer")
+        return tags
+
+
 def create_app(
-    *, database_url: str, storage_roots: Sequence[Mapping[str, Any]]
+    *,
+    database_url: str,
+    storage_roots: Sequence[Mapping[str, Any]],
+    derivative_root: str | Path = "./data/derivatives",
 ) -> FastAPI:
     engine = create_engine(database_url)
-    catalog = Catalog(engine, storage_roots)
+    catalog = Catalog(engine, storage_roots, Path(derivative_root))
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         catalog.initialize()
+        recovered_tasks = [
+            asyncio.create_task(
+                asyncio.to_thread(catalog.run_queued_audio_extraction, job_id)
+            )
+            for job_id in catalog.recover_incomplete_audio_jobs()
+        ]
         yield
+        if recovered_tasks:
+            await asyncio.gather(*recovered_tasks, return_exceptions=True)
         engine.dispose()
 
     app = FastAPI(title="Hoarder Library", lifespan=lifespan)
@@ -104,6 +175,17 @@ def create_app(
     def list_jobs() -> dict[str, Any]:
         items = catalog.list_jobs()
         return {"items": items, "total": len(items)}
+
+    @app.post("/api/jobs/{job_id}/retry", status_code=status.HTTP_202_ACCEPTED)
+    def retry_job(job_id: str, background_tasks: BackgroundTasks) -> dict[str, Any]:
+        queued, error = catalog.retry_job(job_id)
+        if error == "not_found":
+            raise HTTPException(status_code=404, detail="Job not found")
+        if error == "conflict":
+            raise HTTPException(status_code=409, detail="Job cannot be retried")
+        assert queued
+        background_tasks.add_task(catalog.run_queued_audio_extraction, job_id)
+        return {"job_id": job_id, "status": "queued"}
 
     @app.get("/api/roots")
     def list_roots() -> dict[str, Any]:
@@ -141,6 +223,96 @@ def create_app(
         if editorial is None:
             raise HTTPException(status_code=404, detail="Asset not found")
         return editorial
+
+    @app.get("/api/assets/{asset_id}")
+    def get_asset(asset_id: str) -> dict[str, Any]:
+        asset = catalog.get_asset(asset_id)
+        if asset is None:
+            raise HTTPException(status_code=404, detail="Asset not found")
+        return asset
+
+    @app.post(
+        "/api/assets/{asset_id}/audio-extractions",
+        status_code=status.HTTP_202_ACCEPTED,
+    )
+    def create_audio_extraction(
+        asset_id: str,
+        payload: AudioExtractionCreate,
+        background_tasks: BackgroundTasks,
+    ) -> dict[str, Any]:
+        job_id, error = catalog.queue_audio_extraction(asset_id, payload.model_dump())
+        if error == "not_found":
+            raise HTTPException(status_code=404, detail="Asset file is unavailable")
+        if error == "wrong_type":
+            raise HTTPException(
+                status_code=409, detail="Audio can only be extracted from video or audio"
+            )
+        if error == "conflict":
+            raise HTTPException(
+                status_code=409,
+                detail="This source range and format already has a derivative",
+            )
+        assert job_id is not None
+        background_tasks.add_task(catalog.run_queued_audio_extraction, job_id)
+        return {"job_id": job_id, "status": "queued"}
+
+    @app.get("/api/music/tracks")
+    def list_tracks(
+        q: str | None = None,
+        artist: str | None = Query(default=None, max_length=300),
+        release: str | None = Query(default=None, max_length=500),
+        tag: str | None = Query(default=None, max_length=120),
+        limit: int = Query(default=50, ge=1, le=200),
+        offset: int = Query(default=0, ge=0),
+    ) -> dict[str, Any]:
+        items, total = catalog.list_tracks(
+            query=q,
+            artist=artist,
+            release=release,
+            tag=tag,
+            limit=limit,
+            offset=offset,
+        )
+        return {"items": items, "total": total, "limit": limit, "offset": offset}
+
+    @app.get("/api/music/tracks/{track_id}")
+    def get_track(track_id: str) -> dict[str, Any]:
+        track = catalog.get_track(track_id)
+        if track is None:
+            raise HTTPException(status_code=404, detail="Track not found")
+        return track
+
+    @app.patch("/api/music/tracks/{track_id}")
+    def update_track(track_id: str, payload: TrackPatch) -> dict[str, Any]:
+        track = catalog.update_track(track_id, payload.model_dump(exclude_unset=True))
+        if track is None:
+            raise HTTPException(status_code=404, detail="Track not found")
+        return track
+
+    @app.delete("/api/music/tracks/{track_id}", status_code=status.HTTP_204_NO_CONTENT)
+    def delete_track(track_id: str) -> Response:
+        if not catalog.delete_track(track_id):
+            raise HTTPException(status_code=404, detail="Track not found")
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    @app.get("/api/music/tracks/{track_id}/stream")
+    def stream_track(
+        track_id: str, range_header: str | None = Header(None, alias="Range")
+    ):
+        path = catalog.resolve_track_file(track_id)
+        if path is None:
+            raise HTTPException(status_code=404, detail="Track file is unavailable")
+        return _stream_path(path, range_header)
+
+    @app.get("/api/music/artists")
+    def list_artists() -> dict[str, Any]:
+        items = catalog.list_artists()
+        return {"items": items, "total": len(items)}
+
+    @app.get("/api/music/releases")
+    def list_releases() -> dict[str, Any]:
+        items = catalog.list_releases()
+        return {"items": items, "total": len(items)}
 
     @app.patch("/api/assets/{asset_id}/editorial")
     def update_asset_editorial(
@@ -283,21 +455,7 @@ def create_app(
         path = catalog.resolve_asset_file(asset_id)
         if path is None:
             raise HTTPException(status_code=404, detail="Asset file is unavailable")
-        size = path.stat().st_size
-        start, end, status = _parse_range(range_header, size)
-        headers = {
-            "Accept-Ranges": "bytes",
-            "Content-Length": str(end - start + 1),
-        }
-        if status == 206:
-            headers["Content-Range"] = f"bytes {start}-{end}/{size}"
-        media_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
-        return StreamingResponse(
-            _read_range(path, start, end),
-            status_code=status,
-            headers=headers,
-            media_type=media_type,
-        )
+        return _stream_path(path, range_header)
 
     @app.get("/api/assets/{asset_id}/thumbnail")
     def asset_thumbnail(asset_id: str):
@@ -310,6 +468,24 @@ def create_app(
         return FileResponse(path, media_type=media_type)
 
     return app
+
+
+def _stream_path(path: Path, range_header: str | None) -> StreamingResponse:
+    size = path.stat().st_size
+    start, end, response_status = _parse_range(range_header, size)
+    headers = {
+        "Accept-Ranges": "bytes",
+        "Content-Length": str(end - start + 1),
+    }
+    if response_status == 206:
+        headers["Content-Range"] = f"bytes {start}-{end}/{size}"
+    media_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+    return StreamingResponse(
+        _read_range(path, start, end),
+        status_code=response_status,
+        headers=headers,
+        media_type=media_type,
+    )
 
 
 def _parse_range(value: str | None, size: int) -> tuple[int, int, int]:

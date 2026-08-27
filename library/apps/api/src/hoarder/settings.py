@@ -18,5 +18,6 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="HOARDER_", env_file=".env")
 
     database_url: str = "sqlite:///./data/catalog.db"
+    derivative_root: str = "./data/derivatives"
     storage_roots: list[StorageRootSettings] = Field(default_factory=list)
     web_dist: str | None = None

@@ -193,4 +193,57 @@ describe("AssetViewer", () => {
     expect(onNext).toHaveBeenCalledOnce();
     expect(onPrevious).toHaveBeenCalledOnce();
   });
+
+  it("queues a tagged audio extraction from a selected video range", async () => {
+    const fetch = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/audio-extractions")) {
+        return Promise.resolve({
+          ok: true,
+          status: 202,
+          json: async () => ({ job_id: "job-1", status: "queued" }),
+        });
+      }
+      if (url.endsWith("/editorial")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ asset_id: "video-1", ...{
+            rating: null, favorite: false, workflow_state: "inbox", notes: "", tags: [],
+          } }),
+        });
+      }
+      if (url.endsWith("/api/curated-channels")) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [] }) });
+      }
+      return Promise.resolve({ ok: false, status: 404, json: async () => ({}) });
+    });
+    vi.stubGlobal("fetch", fetch);
+    render(<AssetViewer apiBase="http://catalog.test" asset={video} onClose={() => {}} />);
+
+    fireEvent.change(screen.getByLabelText("Track title"), {
+      target: { value: "Museum Theme" },
+    });
+    fireEvent.change(screen.getByLabelText("Artist"), {
+      target: { value: "Archive Orchestra" },
+    });
+    fireEvent.change(screen.getByLabelText("Start time"), {
+      target: { value: "00:00:10" },
+    });
+    fireEvent.change(screen.getByLabelText("End time"), {
+      target: { value: "00:01:15" },
+    });
+    fireEvent.change(screen.getByLabelText("Audio tags"), {
+      target: { value: "music, museum" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create audio track" }));
+
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith(
+      "http://catalog.test/api/assets/video-1/audio-extractions",
+      expect.objectContaining({
+        method: "POST",
+        body: expect.stringContaining('"start_ms":10000'),
+      }),
+    ));
+    expect(await screen.findByText("Audio extraction queued — follow it in Jobs")).toBeInTheDocument();
+  });
 });

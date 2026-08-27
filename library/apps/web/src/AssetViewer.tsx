@@ -70,6 +70,20 @@ export function AssetViewer({
   const [saving, setSaving] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [extracting, setExtracting] = useState(false);
+  const [audioDraft, setAudioDraft] = useState({
+    title: asset.title,
+    artist: "",
+    release: "",
+    year: "",
+    trackNumber: "",
+    genre: "",
+    tags: "",
+    start: "00:00:00",
+    end: "",
+    format: "m4a",
+    bitrate: "256",
+  });
 
   useEffect(() => {
     let active = true;
@@ -79,6 +93,10 @@ export function AssetViewer({
     setSelectedChannelId("");
     setStatusMessage(null);
     setError(null);
+    setAudioDraft({
+      title: asset.title, artist: "", release: "", year: "", trackNumber: "",
+      genre: "", tags: "", start: "00:00:00", end: "", format: "m4a", bitrate: "256",
+    });
     Promise.all([
       fetch(`${apiBase}/api/assets/${asset.id}/editorial`).then((response) => {
         if (!response.ok) throw new Error(`Evaluation request failed (${response.status})`);
@@ -201,6 +219,48 @@ export function AssetViewer({
       setError(reason instanceof Error ? reason.message : "Channel assignment failed");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function createAudioTrack(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setExtracting(true);
+    setError(null);
+    setStatusMessage(null);
+    try {
+      const startMs = parseTimecode(audioDraft.start);
+      const endMs = audioDraft.end.trim() ? parseTimecode(audioDraft.end) : null;
+      if (endMs !== null && endMs <= startMs) {
+        throw new Error("End time must be after start time");
+      }
+      const response = await fetch(`${apiBase}/api/assets/${asset.id}/audio-extractions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: audioDraft.title.trim(),
+          artist: audioDraft.artist.trim(),
+          release: audioDraft.release.trim(),
+          year: audioDraft.year ? Number(audioDraft.year) : null,
+          track_number: audioDraft.trackNumber ? Number(audioDraft.trackNumber) : null,
+          genre: audioDraft.genre.trim(),
+          tags: audioDraft.tags.split(",").map((tag) => tag.trim()).filter(Boolean),
+          start_ms: startMs,
+          end_ms: endMs,
+          format: audioDraft.format,
+          bitrate_kbps: Number(audioDraft.bitrate),
+        }),
+      });
+      if (!response.ok) {
+        const message = response.status === 409
+          ? "That range and format already exists in the music library"
+          : `Audio extraction request failed (${response.status})`;
+        throw new Error(message);
+      }
+      setStatusMessage("Audio extraction queued — follow it in Jobs");
+    } catch (reason: unknown) {
+      setError(reason instanceof Error ? reason.message : "Audio extraction request failed");
+    } finally {
+      setExtracting(false);
     }
   }
 
@@ -343,6 +403,33 @@ export function AssetViewer({
                 Add to channel
               </button>
             </div>
+            {asset.media_type === "video" || asset.media_type === "audio" ? (
+              <details className="audio-extraction" open={asset.media_type === "video"}>
+                <summary>Create music track</summary>
+                <form onSubmit={createAudioTrack}>
+                  <label>Track title<input aria-label="Track title" required value={audioDraft.title} onChange={(event) => setAudioDraft({ ...audioDraft, title: event.target.value })} /></label>
+                  <label>Artist<input aria-label="Artist" value={audioDraft.artist} onChange={(event) => setAudioDraft({ ...audioDraft, artist: event.target.value })} /></label>
+                  <label>Release<input aria-label="Release" value={audioDraft.release} onChange={(event) => setAudioDraft({ ...audioDraft, release: event.target.value })} /></label>
+                  <div className="compact-fields">
+                    <label>Year<input aria-label="Release year" min="1000" max="9999" type="number" value={audioDraft.year} onChange={(event) => setAudioDraft({ ...audioDraft, year: event.target.value })} /></label>
+                    <label>Track<input aria-label="Track number" min="1" type="number" value={audioDraft.trackNumber} onChange={(event) => setAudioDraft({ ...audioDraft, trackNumber: event.target.value })} /></label>
+                  </div>
+                  <label>Genre<input aria-label="Genre" value={audioDraft.genre} onChange={(event) => setAudioDraft({ ...audioDraft, genre: event.target.value })} /></label>
+                  <label>Audio tags<input aria-label="Audio tags" placeholder="music, live, favorite" value={audioDraft.tags} onChange={(event) => setAudioDraft({ ...audioDraft, tags: event.target.value })} /></label>
+                  <div className="compact-fields">
+                    <label>Start time<input aria-label="Start time" placeholder="HH:MM:SS" value={audioDraft.start} onChange={(event) => setAudioDraft({ ...audioDraft, start: event.target.value })} /></label>
+                    <label>End time<input aria-label="End time" placeholder="optional" value={audioDraft.end} onChange={(event) => setAudioDraft({ ...audioDraft, end: event.target.value })} /></label>
+                  </div>
+                  <div className="compact-fields">
+                    <label>Format<select aria-label="Audio format" value={audioDraft.format} onChange={(event) => setAudioDraft({ ...audioDraft, format: event.target.value })}><option value="m4a">M4A / AAC</option><option value="opus">Opus</option><option value="flac">FLAC</option></select></label>
+                    <label>Bitrate<select aria-label="Audio bitrate" disabled={audioDraft.format === "flac"} value={audioDraft.bitrate} onChange={(event) => setAudioDraft({ ...audioDraft, bitrate: event.target.value })}><option value="128">128 kbps</option><option value="192">192 kbps</option><option value="256">256 kbps</option><option value="320">320 kbps</option></select></label>
+                  </div>
+                  <button className="primary-action" disabled={extracting} type="submit">
+                    {extracting ? "Queueing…" : "Create audio track"}
+                  </button>
+                </form>
+              </details>
+            ) : null}
             {statusMessage ? <p aria-live="polite" className="editorial-status">{statusMessage}</p> : null}
             {error ? <p role="alert">{error}</p> : null}
             <small className="shortcut-hint">
@@ -388,4 +475,14 @@ function formatBytes(bytes: number): string {
   if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
   if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+}
+
+function parseTimecode(value: string): number {
+  const parts = value.trim().split(":");
+  if (parts.length > 3 || parts.some((part) => !/^\d+(?:\.\d+)?$/.test(part))) {
+    throw new Error("Use a time such as 01:23 or 00:01:23");
+  }
+  const seconds = parts.reduce((total, part) => total * 60 + Number(part), 0);
+  if (!Number.isFinite(seconds) || seconds < 0) throw new Error("Invalid time range");
+  return Math.round(seconds * 1000);
 }

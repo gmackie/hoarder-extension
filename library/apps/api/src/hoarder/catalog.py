@@ -1,5 +1,7 @@
 import json
+import hashlib
 from collections.abc import Mapping, Sequence
+from datetime import UTC, datetime
 from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import Any
@@ -9,6 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from .fingerprints import fingerprint_media
+from .audio import AudioExtractionError, AudioExtractor
 from .models import (
     Asset,
     AssetEditorial,
@@ -16,9 +19,13 @@ from .models import (
     Base,
     CuratedChannel,
     CuratedChannelItem,
+    Derivative,
+    Artist,
     Job,
+    Release,
     StorageRoot,
     Tag,
+    Track,
 )
 
 MEDIA_TYPES = {
@@ -45,10 +52,14 @@ MEDIA_TYPES = {
 
 class Catalog:
     def __init__(
-        self, engine: Engine, storage_roots: Sequence[Mapping[str, Any]]
+        self,
+        engine: Engine,
+        storage_roots: Sequence[Mapping[str, Any]],
+        derivative_root: Path,
     ) -> None:
         self.engine = engine
         self.storage_roots = storage_roots
+        self.audio_extractor = AudioExtractor(derivative_root)
         self.exclude_patterns = {
             str(root["key"]): tuple(
                 str(pattern) for pattern in root.get("exclude_patterns", [])
@@ -84,6 +95,7 @@ class Catalog:
         }
 
     def initialize(self) -> None:
+        self.audio_extractor.initialize()
         Base.metadata.create_all(self.engine)
         with Session(self.engine) as session:
             for configured in self.storage_roots:
@@ -359,6 +371,19 @@ class Catalog:
                 for asset_file in asset.files
             ],
         }
+
+    def get_asset(self, asset_id: str) -> dict[str, Any] | None:
+        with Session(self.engine) as session:
+            asset = session.scalar(
+                select(Asset)
+                .where(Asset.id == asset_id, Asset.status != "excluded")
+                .options(
+                    selectinload(Asset.files).selectinload(AssetFile.root),
+                    selectinload(Asset.editorial),
+                    selectinload(Asset.tags),
+                )
+            )
+            return self._serialize_asset(asset) if asset is not None else None
 
     def get_editorial(self, asset_id: str) -> dict[str, Any] | None:
         with Session(self.engine) as session:
@@ -801,7 +826,465 @@ class Catalog:
             )
             if asset is None or asset.media_type not in {"video", "audio"}:
                 return None
-            return self._resolve_thumbnail_from_files(asset.files)
+        return self._resolve_thumbnail_from_files(asset.files)
+
+    def queue_audio_extraction(
+        self, asset_id: str, request: Mapping[str, Any]
+    ) -> tuple[str | None, str | None]:
+        source = self.resolve_asset_file(asset_id)
+        with Session(self.engine) as session:
+            asset = session.get(Asset, asset_id)
+            if asset is None or source is None:
+                return None, "not_found"
+            if asset.media_type not in {"video", "audio"}:
+                return None, "wrong_type"
+            recipe = {
+                "start_ms": int(request.get("start_ms", 0)),
+                "end_ms": request.get("end_ms"),
+                "format": str(request.get("format", "m4a")),
+                "bitrate_kbps": int(request.get("bitrate_kbps", 256)),
+            }
+            encoded_recipe = json.dumps(recipe, sort_keys=True, separators=(",", ":"))
+            fingerprint = hashlib.sha256(encoded_recipe.encode()).hexdigest()
+            existing = session.scalar(
+                select(Derivative).where(
+                    Derivative.source_asset_id == asset_id,
+                    Derivative.kind == "audio_extract",
+                    Derivative.recipe_fingerprint == fingerprint,
+                )
+            )
+            if existing is not None:
+                return None, "conflict"
+            extension = {"m4a": "m4a", "opus": "opus", "flac": "flac"}[
+                recipe["format"]
+            ]
+            derivative = Derivative(
+                source_asset_id=asset_id,
+                kind="audio_extract",
+                status="pending",
+                relative_path=f"audio/{asset_id}/{fingerprint}.{extension}",
+                recipe_fingerprint=fingerprint,
+                recipe=recipe,
+            )
+            session.add(derivative)
+            session.flush()
+            job = Job(
+                kind="audio_extraction",
+                status="queued",
+                result={
+                    "request": dict(request),
+                    "derivative_id": derivative.id,
+                    "source_asset_id": asset_id,
+                },
+            )
+            session.add(job)
+            session.commit()
+            return job.id, None
+
+    def run_queued_audio_extraction(self, job_id: str) -> None:
+        with Session(self.engine) as session:
+            job = session.get(Job, job_id)
+            if job is None or job.kind != "audio_extraction":
+                return
+            job.status = "running"
+            job.attempt_count += 1
+            details = dict(job.result or {})
+            derivative = session.get(Derivative, details.get("derivative_id"))
+            if derivative is None:
+                job.status = "failed"
+                job.result = {**details, "stage": "catalog", "retryable": False}
+                session.commit()
+                return
+            derivative.status = "pending"
+            request = dict(details.get("request") or {})
+            source_asset_id = derivative.source_asset_id
+            relative_path = derivative.relative_path
+            recipe = dict(derivative.recipe)
+            session.commit()
+
+        source = self.resolve_asset_file(source_asset_id)
+        if source is None:
+            self._fail_audio_extraction(job_id, "source", retryable=True)
+            return
+        metadata = {
+            "title": str(request.get("title", "")),
+            "artist": str(request.get("artist", "")),
+            "album": str(request.get("release", "")),
+            "date": str(request.get("year", "")),
+            "track": str(request.get("track_number", "")),
+            "genre": str(request.get("genre", "")),
+        }
+        try:
+            probe = self.audio_extractor.extract(
+                source=source,
+                relative_path=relative_path,
+                recipe=recipe,
+                metadata=metadata,
+            )
+        except AudioExtractionError:
+            self._fail_audio_extraction(job_id, "extract", retryable=True)
+            return
+
+        with Session(self.engine) as session:
+            job = session.get(Job, job_id)
+            derivative = session.get(Derivative, details["derivative_id"])
+            if job is None or derivative is None:
+                return
+            artist = self._find_or_create_artist(session, request.get("artist"))
+            release = self._find_or_create_release(
+                session,
+                request.get("release"),
+                artist,
+                request.get("year"),
+            )
+            track = Track(
+                derivative=derivative,
+                source_asset_id=source_asset_id,
+                artist=artist,
+                release=release,
+                title=str(request["title"]).strip(),
+                track_number=request.get("track_number"),
+                genre=str(request.get("genre", "")).strip(),
+                start_ms=int(recipe["start_ms"]),
+                end_ms=recipe.get("end_ms"),
+            )
+            session.add(track)
+            track.tags = self._find_or_create_tags(session, request.get("tags", []))
+            derivative.status = "active"
+            derivative.size = probe.size
+            derivative.duration_ms = probe.duration_ms
+            derivative.codec = probe.codec
+            derivative.sample_rate = probe.sample_rate
+            derivative.channels = probe.channels
+            derivative.tool_version = probe.tool_version
+            derivative.activated_at = datetime.now(UTC)
+            session.flush()
+            job.status = "completed"
+            job.result = {
+                **details,
+                "track_id": track.id,
+                "relative_path": derivative.relative_path,
+            }
+            session.commit()
+
+    def _fail_audio_extraction(
+        self, job_id: str, stage: str, *, retryable: bool
+    ) -> None:
+        with Session(self.engine) as session:
+            job = session.get(Job, job_id)
+            if job is None:
+                return
+            details = dict(job.result or {})
+            derivative = session.get(Derivative, details.get("derivative_id"))
+            if derivative is not None:
+                derivative.status = "failed"
+            job.status = "failed"
+            job.result = {
+                **details,
+                "stage": stage,
+                "retryable": retryable,
+                "error": "Audio extraction failed",
+            }
+            session.commit()
+
+    def retry_job(self, job_id: str) -> tuple[bool, str | None]:
+        with Session(self.engine) as session:
+            job = session.get(Job, job_id)
+            if job is None:
+                return False, "not_found"
+            if job.kind != "audio_extraction" or job.status != "failed":
+                return False, "conflict"
+            if not (job.result or {}).get("retryable"):
+                return False, "conflict"
+            job.status = "queued"
+            session.commit()
+            return True, None
+
+    def recover_incomplete_audio_jobs(self) -> list[str]:
+        with Session(self.engine) as session:
+            jobs = session.scalars(
+                select(Job)
+                .where(
+                    Job.kind == "audio_extraction",
+                    Job.status.in_(("queued", "running")),
+                )
+                .order_by(Job.created_at)
+            ).all()
+            for job in jobs:
+                job.status = "queued"
+            session.commit()
+            return [job.id for job in jobs]
+
+    def list_tracks(
+        self,
+        *,
+        query: str | None = None,
+        artist: str | None = None,
+        release: str | None = None,
+        tag: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[list[dict[str, Any]], int]:
+        with Session(self.engine) as session:
+            statement = (
+                select(Track)
+                .join(Track.derivative)
+                .where(Derivative.status == "active")
+                .options(*self._track_load_options())
+            )
+            if query:
+                statement = statement.outerjoin(Track.artist).outerjoin(Track.release)
+                pattern = f"%{query}%"
+                statement = statement.where(
+                    or_(
+                        Track.title.ilike(pattern),
+                        Artist.name.ilike(pattern),
+                        Release.title.ilike(pattern),
+                    )
+                )
+            if artist:
+                statement = statement.join(Track.artist).where(
+                    Artist.normalized_name == self._normalize_music_name(artist)
+                )
+            if release:
+                statement = statement.join(Track.release).where(
+                    Release.normalized_title == self._normalize_music_name(release)
+                )
+            if tag:
+                statement = statement.join(Track.tags).where(
+                    Tag.name == self._normalize_tag(tag)
+                )
+            total = session.scalar(
+                select(func.count()).select_from(statement.order_by(None).subquery())
+            )
+            tracks = session.scalars(
+                statement.order_by(Track.created_at.desc()).limit(limit).offset(offset)
+            ).unique().all()
+            return [self._serialize_track(track) for track in tracks], int(total or 0)
+
+    def get_track(self, track_id: str) -> dict[str, Any] | None:
+        with Session(self.engine) as session:
+            track = session.scalar(
+                select(Track)
+                .where(Track.id == track_id)
+                .options(*self._track_load_options())
+            )
+            return self._serialize_track(track) if track is not None else None
+
+    def update_track(
+        self, track_id: str, updates: Mapping[str, Any]
+    ) -> dict[str, Any] | None:
+        with Session(self.engine) as session:
+            track = session.scalar(
+                select(Track)
+                .where(Track.id == track_id)
+                .options(*self._track_load_options())
+            )
+            if track is None:
+                return None
+            if "title" in updates:
+                track.title = str(updates["title"]).strip()
+            if "artist" in updates:
+                track.artist = self._find_or_create_artist(session, updates["artist"])
+            if "release" in updates or "year" in updates or "artist" in updates:
+                release_title = updates.get(
+                    "release", track.release.title if track.release else None
+                )
+                release_year = updates.get(
+                    "year", track.release.year if track.release else None
+                )
+                track.release = self._find_or_create_release(
+                    session, release_title, track.artist, release_year
+                )
+                if "year" in updates and track.release is not None:
+                    track.release.year = updates["year"]
+            for field in ("track_number", "genre"):
+                if field in updates:
+                    setattr(track, field, updates[field] or ("" if field == "genre" else None))
+            if "tags" in updates:
+                track.tags = self._find_or_create_tags(session, updates["tags"] or [])
+            session.commit()
+            return self._serialize_track(track)
+
+    def delete_track(self, track_id: str) -> bool:
+        with Session(self.engine) as session:
+            track = session.scalar(
+                select(Track)
+                .where(Track.id == track_id)
+                .options(selectinload(Track.derivative))
+            )
+            if track is None:
+                return False
+            derivative = track.derivative
+            self.audio_extractor.delete(derivative.relative_path)
+            session.delete(derivative)
+            session.commit()
+            return True
+
+    def resolve_track_file(self, track_id: str) -> Path | None:
+        with Session(self.engine) as session:
+            derivative = session.scalar(
+                select(Derivative)
+                .join(Track, Track.derivative_id == Derivative.id)
+                .where(Track.id == track_id, Derivative.status == "active")
+            )
+            if derivative is None:
+                return None
+            return self.audio_extractor.resolve(derivative.relative_path)
+
+    def list_artists(self) -> list[dict[str, Any]]:
+        with Session(self.engine) as session:
+            artists = session.scalars(
+                select(Artist)
+                .options(selectinload(Artist.tracks))
+                .order_by(Artist.normalized_name)
+            ).all()
+            return [
+                {"id": item.id, "name": item.name, "track_count": len(item.tracks)}
+                for item in artists
+                if item.tracks
+            ]
+
+    def list_releases(self) -> list[dict[str, Any]]:
+        with Session(self.engine) as session:
+            releases = session.scalars(
+                select(Release)
+                .options(selectinload(Release.artist), selectinload(Release.tracks))
+                .order_by(Release.normalized_title)
+            ).all()
+            return [
+                {
+                    "id": item.id,
+                    "title": item.title,
+                    "year": item.year,
+                    "artist": self._serialize_artist(item.artist),
+                    "track_count": len(item.tracks),
+                }
+                for item in releases
+                if item.tracks
+            ]
+
+    @staticmethod
+    def _track_load_options():
+        return (
+            selectinload(Track.derivative),
+            selectinload(Track.source_asset)
+            .selectinload(Asset.files)
+            .selectinload(AssetFile.root),
+            selectinload(Track.artist),
+            selectinload(Track.release).selectinload(Release.artist),
+            selectinload(Track.tags),
+        )
+
+    def _serialize_track(self, track: Track) -> dict[str, Any]:
+        derivative = track.derivative
+        return {
+            "id": track.id,
+            "title": track.title,
+            "artist": self._serialize_artist(track.artist),
+            "release": (
+                {
+                    "id": track.release.id,
+                    "title": track.release.title,
+                    "year": track.release.year,
+                }
+                if track.release is not None
+                else None
+            ),
+            "track_number": track.track_number,
+            "genre": track.genre,
+            "tags": sorted(tag.name for tag in track.tags),
+            "source_asset": {
+                "id": track.source_asset.id,
+                "title": track.source_asset.title,
+            },
+            "start_ms": track.start_ms,
+            "end_ms": track.end_ms,
+            "format": str(derivative.recipe["format"]),
+            "codec": derivative.codec,
+            "size": derivative.size,
+            "duration_ms": derivative.duration_ms,
+            "sample_rate": derivative.sample_rate,
+            "channels": derivative.channels,
+            "relative_path": derivative.relative_path,
+            "stream_url": f"/api/music/tracks/{track.id}/stream",
+            "artwork_url": (
+                f"/api/assets/{track.source_asset.id}/thumbnail"
+                if self._resolve_thumbnail_from_files(track.source_asset.files) is not None
+                else None
+            ),
+            "created_at": track.created_at.isoformat(),
+        }
+
+    @staticmethod
+    def _serialize_artist(artist: Artist | None) -> dict[str, Any] | None:
+        return {"id": artist.id, "name": artist.name} if artist is not None else None
+
+    @staticmethod
+    def _normalize_music_name(value: Any) -> str:
+        return " ".join(str(value or "").strip().casefold().split())
+
+    def _find_or_create_artist(self, session: Session, value: Any) -> Artist | None:
+        name = " ".join(str(value or "").strip().split())
+        if not name:
+            return None
+        normalized = self._normalize_music_name(name)
+        artist = session.scalar(
+            select(Artist).where(Artist.normalized_name == normalized)
+        )
+        if artist is None:
+            artist = Artist(name=name, normalized_name=normalized)
+            session.add(artist)
+            session.flush()
+        return artist
+
+    def _find_or_create_release(
+        self,
+        session: Session,
+        value: Any,
+        artist: Artist | None,
+        year: Any,
+    ) -> Release | None:
+        title = " ".join(str(value or "").strip().split())
+        if not title:
+            return None
+        normalized = self._normalize_music_name(title)
+        statement = select(Release).where(
+            Release.normalized_title == normalized,
+            Release.artist_id == (artist.id if artist else None),
+        )
+        release = session.scalar(statement)
+        if release is None:
+            release = Release(
+                title=title,
+                normalized_title=normalized,
+                artist=artist,
+                year=year,
+            )
+            session.add(release)
+            session.flush()
+        elif year is not None:
+            release.year = year
+        return release
+
+    def _find_or_create_tags(self, session: Session, values: Any) -> list[Tag]:
+        names = sorted(
+            {
+                normalized
+                for value in values
+                if (normalized := self._normalize_tag(str(value)))
+            }
+        )
+        existing = {
+            tag.name: tag
+            for tag in session.scalars(select(Tag).where(Tag.name.in_(names))).all()
+        }
+        for name in names:
+            if name not in existing:
+                existing[name] = Tag(name=name)
+                session.add(existing[name])
+        session.flush()
+        return [existing[name] for name in names]
 
     def _resolve_thumbnail_from_files(
         self, asset_files: Sequence[AssetFile]
@@ -841,6 +1324,7 @@ class Catalog:
                     "kind": job.kind,
                     "status": job.status,
                     "result": job.result,
+                    "attempt_count": job.attempt_count,
                     "created_at": job.created_at.isoformat(),
                 }
                 for job in jobs

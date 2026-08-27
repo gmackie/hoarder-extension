@@ -22,10 +22,12 @@ services:
       dockerfile: library/apps/api/Dockerfile
     environment:
       HOARDER_DATABASE_URL: postgresql+psycopg://hoarder:${HOARDER_DB_PASSWORD:-local-development-only}@db:5432/hoarder
+      HOARDER_DERIVATIVE_ROOT: /data/derivatives
       HOARDER_STORAGE_ROOTS: '${HOARDER_STORAGE_ROOTS:-[{"key":"primary","label":"Primary archive","path":"/media/primary","sentinel":".hoarder-root"},{"key":"secondary","label":"Secondary archive","path":"/media/secondary","sentinel":".hoarder-root"}]}'
     volumes:
       - ${HOARDER_MEDIA_ROOT_1:-./library/dev-media/primary}:/media/primary:ro
       - ${HOARDER_MEDIA_ROOT_2:-./library/dev-media/secondary}:/media/secondary:ro
+      - ${HOARDER_DERIVATIVE_DATA:-hoarder-derivatives}:/data/derivatives
     depends_on:
       db:
         condition: service_healthy
@@ -49,3 +51,4 @@ services:
 
 volumes:
   hoarder-db:
+  hoarder-derivatives:

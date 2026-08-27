@@ -2,6 +2,7 @@ import { type FormEvent, useCallback, useEffect, useRef, useState } from "react"
 
 import { AssetViewer, type Asset, type EditorialState } from "./AssetViewer";
 import { CuratedChannels } from "./CuratedChannels";
+import { MusicLibrary } from "./MusicLibrary";
 
 export type AppProps = { apiBase: string };
 
@@ -20,7 +21,15 @@ type Job = {
   id: string;
   kind: string;
   status: string;
-  result: { discovered?: number } | null;
+  result: {
+    discovered?: number;
+    error?: string;
+    stage?: string;
+    retryable?: boolean;
+    track_id?: string;
+    source_asset_id?: string;
+  } | null;
+  attempt_count: number;
   created_at: string;
 };
 type SourceChannel = {
@@ -35,7 +44,6 @@ type SourceChannel = {
 
 const mediaTypes: Partial<Record<Lens, Asset["media_type"]>> = {
   Videos: "video",
-  Music: "audio",
   Images: "image",
 };
 const PAGE_SIZE = 50;
@@ -286,6 +294,34 @@ export function App({ apiBase }: AppProps) {
     }
   }
 
+  async function openSourceAsset(assetId: string) {
+    setError(null);
+    try {
+      const response = await fetch(`${apiBase}/api/assets/${encodeURIComponent(assetId)}`);
+      if (!response.ok) throw new Error(`Source asset request failed (${response.status})`);
+      const source = await response.json() as Asset;
+      setReviewQueue([source]);
+      setSelectedAsset(source);
+    } catch (reason: unknown) {
+      setError(reason instanceof Error ? reason.message : "Source asset request failed");
+    }
+  }
+
+  async function retryJob(jobId: string) {
+    setError(null);
+    try {
+      const response = await fetch(`${apiBase}/api/jobs/${encodeURIComponent(jobId)}/retry`, {
+        method: "POST",
+      });
+      if (!response.ok) throw new Error(`Retry request failed (${response.status})`);
+      setJobs((current) => current.map((job) => (
+        job.id === jobId ? { ...job, status: "queued" } : job
+      )));
+    } catch (reason: unknown) {
+      setError(reason instanceof Error ? reason.message : "Retry request failed");
+    }
+  }
+
   return (
     <div className="app-shell">
       <aside>
@@ -445,13 +481,28 @@ export function App({ apiBase }: AppProps) {
             }}
           />
         ) : null}
+        {activeLens === "Music" ? (
+          <MusicLibrary apiBase={apiBase} onViewSource={(assetId) => void openSourceAsset(assetId)} />
+        ) : null}
         {activeLens === "Jobs" ? (
           <section aria-label="Background jobs" className="jobs-list">
             {jobs.map((job) => (
               <article key={job.id}>
                 <h2>{formatJobKind(job.kind)}</h2>
-                <strong>{job.status}</strong>
-                <p>{job.result?.discovered ?? 0} discovered</p>
+                <strong className={`job-status job-status-${job.status}`}>{job.status}</strong>
+                {job.kind === "storage_scan" ? (
+                  <p>{job.result?.discovered ?? 0} discovered</p>
+                ) : null}
+                {job.kind === "audio_extraction" && job.status === "completed" ? (
+                  <p>Audio track ready in the Music library</p>
+                ) : null}
+                {job.result?.error ? (
+                  <p role="alert">{job.result.error}{job.result.stage ? ` · ${job.result.stage}` : ""}</p>
+                ) : null}
+                <small>{job.attempt_count ?? 0} attempt{job.attempt_count === 1 ? "" : "s"}</small>
+                {job.status === "failed" && job.result?.retryable ? (
+                  <button onClick={() => void retryJob(job.id)} type="button">Retry job</button>
+                ) : null}
               </article>
             ))}
           </section>

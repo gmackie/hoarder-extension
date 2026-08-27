@@ -42,3 +42,13 @@ def test_storage_roots_are_loaded_from_portable_environment_configuration(
     assert settings.storage_roots[1].channel_thumbnail_patterns == [
         "cache/channels/{channel_id}_thumb.jpg"
     ]
+
+
+def test_derivative_storage_is_configurable_without_changing_media_roots(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("HOARDER_DERIVATIVE_ROOT", "/data/generated-media")
+
+    settings = Settings()
+
+    assert settings.derivative_root == "/data/generated-media"

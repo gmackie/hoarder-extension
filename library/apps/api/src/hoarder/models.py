@@ -82,6 +82,7 @@ class Job(Base):
     kind: Mapped[str] = mapped_column(String(80), index=True)
     status: Mapped[str] = mapped_column(String(24), index=True)
     result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC)
     )
@@ -119,6 +120,9 @@ class Tag(Base):
     assets: Mapped[list[Asset]] = relationship(
         secondary="asset_tags", back_populates="tags"
     )
+    tracks: Mapped[list["Track"]] = relationship(
+        secondary="track_tags", back_populates="tags"
+    )
 
 
 class AssetTag(Base):
@@ -126,6 +130,131 @@ class AssetTag(Base):
 
     asset_id: Mapped[str] = mapped_column(
         ForeignKey("assets.id", ondelete="CASCADE"), primary_key=True
+    )
+    tag_id: Mapped[int] = mapped_column(
+        ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True
+    )
+
+
+class Derivative(Base):
+    __tablename__ = "derivatives"
+    __table_args__ = (
+        UniqueConstraint("source_asset_id", "kind", "recipe_fingerprint"),
+        CheckConstraint("status IN ('pending', 'active', 'failed')"),
+    )
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid4())
+    )
+    source_asset_id: Mapped[str] = mapped_column(
+        ForeignKey("assets.id", ondelete="CASCADE"), index=True
+    )
+    kind: Mapped[str] = mapped_column(String(40), index=True)
+    status: Mapped[str] = mapped_column(String(24), index=True)
+    relative_path: Mapped[str] = mapped_column(String(2048))
+    recipe_fingerprint: Mapped[str] = mapped_column(String(64))
+    recipe: Mapped[dict] = mapped_column(JSON)
+    tool_version: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    size: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    duration_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    codec: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    sample_rate: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    channels: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+    activated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    source_asset: Mapped[Asset] = relationship()
+    track: Mapped["Track | None"] = relationship(
+        back_populates="derivative", cascade="all, delete-orphan"
+    )
+
+
+class Artist(Base):
+    __tablename__ = "artists"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid4())
+    )
+    name: Mapped[str] = mapped_column(String(300))
+    normalized_name: Mapped[str] = mapped_column(String(300), unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+    tracks: Mapped[list["Track"]] = relationship(back_populates="artist")
+    releases: Mapped[list["Release"]] = relationship(back_populates="artist")
+
+
+class Release(Base):
+    __tablename__ = "releases"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid4())
+    )
+    title: Mapped[str] = mapped_column(String(500))
+    normalized_title: Mapped[str] = mapped_column(String(500), index=True)
+    artist_id: Mapped[str | None] = mapped_column(
+        ForeignKey("artists.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    year: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+    artist: Mapped[Artist | None] = relationship(back_populates="releases")
+    tracks: Mapped[list["Track"]] = relationship(back_populates="release")
+
+
+class Track(Base):
+    __tablename__ = "tracks"
+    __table_args__ = (
+        CheckConstraint("start_ms >= 0"),
+        CheckConstraint("end_ms IS NULL OR end_ms > start_ms"),
+    )
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid4())
+    )
+    derivative_id: Mapped[str] = mapped_column(
+        ForeignKey("derivatives.id", ondelete="CASCADE"), unique=True, index=True
+    )
+    source_asset_id: Mapped[str] = mapped_column(
+        ForeignKey("assets.id", ondelete="CASCADE"), index=True
+    )
+    artist_id: Mapped[str | None] = mapped_column(
+        ForeignKey("artists.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    release_id: Mapped[str | None] = mapped_column(
+        ForeignKey("releases.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    title: Mapped[str] = mapped_column(String(1024), index=True)
+    track_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    genre: Mapped[str] = mapped_column(String(200), default="")
+    start_ms: Mapped[int] = mapped_column(BigInteger, default=0)
+    end_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+    derivative: Mapped[Derivative] = relationship(back_populates="track")
+    source_asset: Mapped[Asset] = relationship()
+    artist: Mapped[Artist | None] = relationship(back_populates="tracks")
+    release: Mapped[Release | None] = relationship(back_populates="tracks")
+    tags: Mapped[list[Tag]] = relationship(
+        secondary="track_tags", back_populates="tracks"
+    )
+
+
+class TrackTag(Base):
+    __tablename__ = "track_tags"
+
+    track_id: Mapped[str] = mapped_column(
+        ForeignKey("tracks.id", ondelete="CASCADE"), primary_key=True
     )
     tag_id: Mapped[int] = mapped_column(
         ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True

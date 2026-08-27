@@ -18,6 +18,10 @@ This first vertical slice includes:
 - Source-channel discovery, local channel artwork, and channel-filtered catalogs.
 - Durable ratings, favorites, workflow state, notes, and normalized tags.
 - Ordered curated channels with per-channel candidate/review/selection status.
+- Durable FFmpeg audio extraction jobs that resume after an API restart.
+- Atomic, FFprobe-validated M4A, Opus, and FLAC derivatives in writable storage.
+- A first-class music catalog with artists, releases, tracks, tags, artwork,
+  source-video lineage, ranged playback, editing, filters, and safe deletion.
 - Durable scan-job history.
 - A responsive PWA with Inbox, Videos, Music, Images, Source Channels,
   Curated Channels, and Jobs navigation.
@@ -46,6 +50,8 @@ Use `127.0.0.1` for local-only access, a Tailscale IP for tailnet-only access,
 or `0.0.0.0` when access from every host interface is intentional.
 `HOARDER_DB_DATA` can be a Docker volume name or an absolute host path on
 persistent storage.
+`HOARDER_DERIVATIVE_DATA` likewise selects writable persistent storage for
+generated audio. It must be separate from the read-only original media roots.
 
 The sentinel prevents an unavailable network mount from looking like an empty
 directory and incorrectly transitioning catalog items to missing.
@@ -181,6 +187,34 @@ GET|POST /api/curated-channels/{channel_id}/items
 PATCH|DELETE /api/curated-channels/{channel_id}/items/{asset_id}
 ```
 
+## Build the music library
+
+Open a video or existing audio asset and expand **Create music track**. Choose
+the full source or a start/end time range, enter artist/release/track metadata,
+and select M4A/AAC, Opus, or FLAC. M4A/AAC at 256 kbps is the default because it
+plays broadly in Brave and household devices; the selected format and bitrate
+are saved in the derivative recipe rather than hardcoded into catalog identity.
+
+Extraction writes to a temporary file, validates the audio stream with FFprobe,
+and activates it with an atomic rename. A failed or interrupted run never
+appears as a playable track. Queued/running jobs resume when the API restarts,
+and failed jobs can be retried from the Jobs lens.
+
+The Music lens supports search plus artist, release, and tag filters; range-aware
+playback; editable metadata; source-video navigation; and source thumbnail art.
+Deleting a track removes only its generated derivative. The archived source
+video remains untouched on its read-only mount.
+
+```text
+POST /api/assets/{asset_id}/audio-extractions
+GET /api/music/tracks?artist=Example&release=Live&tag=favorite
+GET|PATCH|DELETE /api/music/tracks/{track_id}
+GET /api/music/tracks/{track_id}/stream
+GET /api/music/artists
+GET /api/music/releases
+POST /api/jobs/{job_id}/retry
+```
+
 ## Run on a NAS over Tailscale
 
 Use the NAS Tailscale IPv4 address as `HOARDER_BIND_ADDRESS`, keep each media
@@ -191,6 +225,7 @@ storage:
 HOARDER_BIND_ADDRESS=100.x.y.z
 HOARDER_PORT=8088
 HOARDER_DB_DATA=/persistent/apps/hoarder-library/postgres
+HOARDER_DERIVATIVE_DATA=/persistent/apps/hoarder-library/derivatives
 HOARDER_MEDIA_ROOT_1=/local/archive
 HOARDER_MEDIA_ROOT_2=/mounted/secondary-archive
 HOARDER_STORAGE_ROOTS=[{"key":"local","label":"Local NAS","path":"/media/primary","sentinel":".hoarder-root"},{"key":"secondary","label":"Secondary NAS","path":"/media/secondary","sentinel":".hoarder-root"}]
