@@ -309,4 +309,39 @@ describe("macOS installer", () => {
     expect(fs.existsSync(plist)).toBe(false);
     expect(result.stdout).toContain("Automatic updates disabled");
   });
+
+  test("rejects automatic updates from macOS privacy-protected folders", () => {
+    const root = temporaryDirectory();
+    const source = path.join(root, "source");
+    const destination = path.join(root, "Downloads", "hoarder");
+    fs.mkdirSync(path.join(source, "scripts"), { recursive: true });
+    fs.writeFileSync(
+      path.join(source, "manifest.json"),
+      JSON.stringify({ name: "Hoarder", version: "6.0.0" }),
+    );
+    fs.writeFileSync(
+      path.join(source, "scripts", "auto-update-macos.sh"),
+      "#!/bin/sh\n",
+    );
+
+    const result = spawnSync(
+      "sh",
+      [
+        path.resolve(import.meta.dirname, "../scripts/install-macos.sh"),
+        "--source-dir",
+        source,
+        "--install-dir",
+        destination,
+        "--enable-auto-update",
+      ],
+      {
+        encoding: "utf8",
+        env: { ...process.env, HOME: root },
+      },
+    );
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("outside Desktop, Documents, or Downloads");
+    expect(fs.existsSync(destination)).toBe(false);
+  });
 });

@@ -67,6 +67,16 @@ valid_repository() {
   esac
 }
 
+is_macos_privacy_protected_path() {
+  normalized_path="${1%/}/"
+  case "$normalized_path" in
+    "${HOME%/}/Desktop/"*|"${HOME%/}/Documents/"*|"${HOME%/}/Downloads/"*)
+      return 0
+      ;;
+    *) return 1 ;;
+  esac
+}
+
 install_auto_updater() {
   updater_source="$install_dir/scripts/auto-update-macos.sh"
   [ -f "$updater_source" ] || {
@@ -246,6 +256,11 @@ fi
 if [ "$disable_auto_update" = true ]; then
   disable_auto_updater
   exit 0
+fi
+if [ "$enable_auto_update" = true ] && \
+   is_macos_privacy_protected_path "$install_dir"; then
+  echo "Automatic updates require an install directory outside Desktop, Documents, or Downloads" >&2
+  exit 2
 fi
 
 [ -z "$source_dir" ] || { [ -z "$archive_file" ] && [ -z "$release_version" ]; } || {
