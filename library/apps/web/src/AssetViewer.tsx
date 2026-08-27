@@ -29,7 +29,12 @@ type CuratedChannelSummary = {
 type AssetViewerProps = {
   apiBase: string;
   asset: Asset;
+  canNavigateNext?: boolean;
+  canNavigatePrevious?: boolean;
   onClose: () => void;
+  onEditorialSaved?: (editorial: EditorialState) => void;
+  onNavigateNext?: () => void;
+  onNavigatePrevious?: () => void;
 };
 
 const EMPTY_EDITORIAL: Omit<EditorialState, "asset_id"> = {
@@ -40,7 +45,16 @@ const EMPTY_EDITORIAL: Omit<EditorialState, "asset_id"> = {
   tags: [],
 };
 
-export function AssetViewer({ apiBase, asset, onClose }: AssetViewerProps) {
+export function AssetViewer({
+  apiBase,
+  asset,
+  canNavigateNext = false,
+  canNavigatePrevious = false,
+  onClose,
+  onEditorialSaved,
+  onNavigateNext,
+  onNavigatePrevious,
+}: AssetViewerProps) {
   const streamUrl = `${apiBase}/api/assets/${asset.id}/stream`;
   const thumbnailUrl = asset.thumbnail_url
     ? `${apiBase}${asset.thumbnail_url}`
@@ -59,6 +73,12 @@ export function AssetViewer({ apiBase, asset, onClose }: AssetViewerProps) {
 
   useEffect(() => {
     let active = true;
+    const initialEditorial = asset.editorial ?? { asset_id: asset.id, ...EMPTY_EDITORIAL };
+    setEditorial(initialEditorial);
+    setTagsDraft(initialEditorial.tags.join(", "));
+    setSelectedChannelId("");
+    setStatusMessage(null);
+    setError(null);
     Promise.all([
       fetch(`${apiBase}/api/assets/${asset.id}/editorial`).then((response) => {
         if (!response.ok) throw new Error(`Evaluation request failed (${response.status})`);
@@ -93,7 +113,13 @@ export function AssetViewer({ apiBase, asset, onClose }: AssetViewerProps) {
       }
       const target = event.target as HTMLElement | null;
       if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return;
-      if (/^[1-5]$/.test(event.key)) {
+      if (event.key === "ArrowLeft" && canNavigatePrevious) {
+        event.preventDefault();
+        onNavigatePrevious?.();
+      } else if (event.key === "ArrowRight" && canNavigateNext) {
+        event.preventDefault();
+        onNavigateNext?.();
+      } else if (/^[1-5]$/.test(event.key)) {
         setEditorial((current) => ({ ...current, rating: Number(event.key) }));
       } else if (event.key.toLowerCase() === "f") {
         event.preventDefault();
@@ -102,10 +128,9 @@ export function AssetViewer({ apiBase, asset, onClose }: AssetViewerProps) {
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [onClose]);
+  }, [canNavigateNext, canNavigatePrevious, onClose, onNavigateNext, onNavigatePrevious]);
 
-  async function saveEditorial(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function persistEditorial(): Promise<boolean> {
     setSaving(true);
     setError(null);
     setStatusMessage(null);
@@ -128,14 +153,26 @@ export function AssetViewer({ apiBase, asset, onClose }: AssetViewerProps) {
       });
       if (!response.ok) throw new Error(`Evaluation save failed (${response.status})`);
       const saved = (await response.json()) as EditorialState;
-      setEditorial({ ...editorial, ...saved, asset_id: asset.id, tags });
-      setTagsDraft(tags.join(", "));
+      setEditorial(saved);
+      setTagsDraft(saved.tags.join(", "));
+      onEditorialSaved?.(saved);
       setStatusMessage("Evaluation saved");
+      return true;
     } catch (reason: unknown) {
       setError(reason instanceof Error ? reason.message : "Evaluation save failed");
+      return false;
     } finally {
       setSaving(false);
     }
+  }
+
+  async function saveEditorial(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await persistEditorial();
+  }
+
+  async function saveAndNavigateNext() {
+    if (await persistEditorial()) onNavigateNext?.();
   }
 
   async function addToChannel() {
@@ -271,9 +308,18 @@ export function AssetViewer({ apiBase, asset, onClose }: AssetViewerProps) {
                   value={editorial.notes}
                 />
               </label>
-              <button className="primary-action" disabled={saving} type="submit">
-                {saving ? "Saving…" : "Save evaluation"}
-              </button>
+              <div className="editorial-save-actions">
+                <button className="primary-action" disabled={saving} type="submit">
+                  {saving ? "Saving…" : "Save evaluation"}
+                </button>
+                <button
+                  disabled={saving || !canNavigateNext}
+                  onClick={() => void saveAndNavigateNext()}
+                  type="button"
+                >
+                  Save and next
+                </button>
+              </div>
             </form>
 
             <div className="channel-assignment">
@@ -299,19 +345,39 @@ export function AssetViewer({ apiBase, asset, onClose }: AssetViewerProps) {
             </div>
             {statusMessage ? <p aria-live="polite" className="editorial-status">{statusMessage}</p> : null}
             {error ? <p role="alert">{error}</p> : null}
-            <small className="shortcut-hint">Shortcuts: 1–5 rate · F favorite · Esc close</small>
+            <small className="shortcut-hint">
+              Shortcuts: 1–5 rate · F favorite · ←/→ navigate · Esc close
+            </small>
           </aside>
         </div>
 
         <footer className="viewer-footer">
-          <div>
+          <div className="viewer-file-details">
             <strong>{file?.relative_path}</strong>
             <span>{file ? formatBytes(file.size) : "Original file"}</span>
             {asset.media_type === "video" && extension === "mkv" ? (
               <p>Brave may not play MKV directly. Download the original only when you want the file.</p>
             ) : null}
           </div>
-          <a download href={streamUrl}>Download original</a>
+          <div className="viewer-footer-actions">
+            <button
+              aria-label="Previous asset"
+              disabled={!canNavigatePrevious}
+              onClick={onNavigatePrevious}
+              type="button"
+            >
+              ← Previous
+            </button>
+            <button
+              aria-label="Next asset"
+              disabled={!canNavigateNext}
+              onClick={onNavigateNext}
+              type="button"
+            >
+              Next →
+            </button>
+            <a download href={streamUrl}>Download original</a>
+          </div>
         </footer>
       </section>
     </div>

@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from sqlalchemy import Engine, func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from .fingerprints import fingerprint_media
@@ -391,7 +392,7 @@ class Catalog:
                 normalized_names = sorted(
                     {
                         normalized
-                        for value in updates["tags"]
+                        for value in (updates["tags"] or [])
                         if (normalized := self._normalize_tag(value))
                     }
                 )
@@ -401,9 +402,24 @@ class Catalog:
                         select(Tag).where(Tag.name.in_(normalized_names))
                     ).all()
                 }
+                for name in normalized_names:
+                    if name in tags_by_name:
+                        continue
+                    tag = Tag(name=name)
+                    try:
+                        with session.begin_nested():
+                            session.add(tag)
+                            session.flush()
+                    except IntegrityError:
+                        concurrent_tag = session.scalar(
+                            select(Tag).where(Tag.name == name)
+                        )
+                        if concurrent_tag is None:
+                            raise
+                        tag = concurrent_tag
+                    tags_by_name[name] = tag
                 asset.tags = [
-                    tags_by_name.get(name) or Tag(name=name)
-                    for name in normalized_names
+                    tags_by_name[name] for name in normalized_names
                 ]
             session.commit()
             return self._serialize_editorial(asset)
@@ -529,7 +545,11 @@ class Catalog:
                 status=item_status,
             )
             session.add(item)
-            session.commit()
+            try:
+                session.commit()
+            except IntegrityError:
+                session.rollback()
+                return None, "conflict"
             return self._serialize_curated_item(item), None
 
     def list_curated_channel_items(

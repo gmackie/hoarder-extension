@@ -1,6 +1,6 @@
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
-import { AssetViewer, type Asset } from "./AssetViewer";
+import { AssetViewer, type Asset, type EditorialState } from "./AssetViewer";
 import { CuratedChannels } from "./CuratedChannels";
 
 export type AppProps = { apiBase: string };
@@ -62,7 +62,10 @@ export function App({ apiBase }: AppProps) {
   const [scanStatus, setScanStatus] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
+  const [reviewQueue, setReviewQueue] = useState<Asset[]>([]);
   const [selectedChannel, setSelectedChannel] = useState<SourceChannel | null>(null);
+  const assetRequestId = useRef(0);
+  const channelRequestId = useRef(0);
 
   const loadAssets = useCallback(
     async (
@@ -74,8 +77,12 @@ export function App({ apiBase }: AppProps) {
       workflowState?: string,
       tag?: string,
     ) => {
+      const requestId = ++assetRequestId.current;
       const mediaType = mediaTypes[lens];
-      if (!mediaType && lens !== "Inbox") return;
+      if (!mediaType && lens !== "Inbox") {
+        setLoadingAssets(false);
+        return;
+      }
       setError(null);
       setLoadingAssets(true);
       const parameters = new URLSearchParams();
@@ -93,12 +100,16 @@ export function App({ apiBase }: AppProps) {
         const response = await fetch(`${apiBase}${resource}?${parameters}`);
         if (!response.ok) throw new Error(`Catalog request failed (${response.status})`);
         const payload = (await response.json()) as { items: Asset[]; total: number };
-        setAssets(payload.items);
-        setTotalAssets(payload.total);
+        if (requestId === assetRequestId.current) {
+          setAssets(payload.items);
+          setTotalAssets(payload.total);
+        }
       } catch (reason: unknown) {
-        setError(reason instanceof Error ? reason.message : "Catalog request failed");
+        if (requestId === assetRequestId.current) {
+          setError(reason instanceof Error ? reason.message : "Catalog request failed");
+        }
       } finally {
-        setLoadingAssets(false);
+        if (requestId === assetRequestId.current) setLoadingAssets(false);
       }
     },
     [apiBase],
@@ -106,6 +117,7 @@ export function App({ apiBase }: AppProps) {
 
   const loadChannels = useCallback(
     async (pageOffset: number, searchQuery: string) => {
+      const requestId = ++channelRequestId.current;
       setError(null);
       setLoadingChannels(true);
       const parameters = new URLSearchParams({
@@ -120,18 +132,34 @@ export function App({ apiBase }: AppProps) {
           items: SourceChannel[];
           total: number;
         };
-        setChannels(payload.items);
-        setTotalChannels(payload.total);
+        if (requestId === channelRequestId.current) {
+          setChannels(payload.items);
+          setTotalChannels(payload.total);
+        }
       } catch (reason: unknown) {
-        setError(reason instanceof Error ? reason.message : "Channel request failed");
+        if (requestId === channelRequestId.current) {
+          setError(reason instanceof Error ? reason.message : "Channel request failed");
+        }
       } finally {
-        setLoadingChannels(false);
+        if (requestId === channelRequestId.current) setLoadingChannels(false);
       }
     },
     [apiBase],
   );
 
   const selectedChannelId = selectedChannel?.id;
+  const selectedAssetIndex = selectedAsset
+    ? reviewQueue.findIndex((asset) => asset.id === selectedAsset.id)
+    : -1;
+
+  function applySavedEditorial(saved: EditorialState) {
+    const updateAsset = (asset: Asset) => (
+      asset.id === saved.asset_id ? { ...asset, editorial: saved } : asset
+    );
+    setAssets((current) => current.map(updateAsset));
+    setReviewQueue((current) => current.map(updateAsset));
+    setSelectedAsset((current) => (current ? updateAsset(current) : null));
+  }
 
   useEffect(() => {
     void loadAssets(
@@ -199,6 +227,7 @@ export function App({ apiBase }: AppProps) {
 
   function resetCatalogNavigation() {
     setSelectedAsset(null);
+    setReviewQueue([]);
     setOffset(0);
     setSearchDraft("");
     setQuery("");
@@ -387,7 +416,10 @@ export function App({ apiBase }: AppProps) {
                     aria-label={`View ${asset.title}`}
                     className="asset-card"
                     key={asset.id}
-                    onClick={() => setSelectedAsset(asset)}
+                    onClick={() => {
+                      setReviewQueue(assets);
+                      setSelectedAsset(asset);
+                    }}
                     type="button"
                   >
                     <AssetPreview apiBase={apiBase} asset={asset} />
@@ -405,7 +437,13 @@ export function App({ apiBase }: AppProps) {
           </>
         ) : null}
         {activeLens === "Curated Channels" ? (
-          <CuratedChannels apiBase={apiBase} onViewAsset={setSelectedAsset} />
+          <CuratedChannels
+            apiBase={apiBase}
+            onViewAsset={(asset, queue) => {
+              setReviewQueue(queue);
+              setSelectedAsset(asset);
+            }}
+          />
         ) : null}
         {activeLens === "Jobs" ? (
           <section aria-label="Background jobs" className="jobs-list">
@@ -423,7 +461,23 @@ export function App({ apiBase }: AppProps) {
         <AssetViewer
           apiBase={apiBase}
           asset={selectedAsset}
-          onClose={() => setSelectedAsset(null)}
+          canNavigateNext={selectedAssetIndex >= 0 && selectedAssetIndex < reviewQueue.length - 1}
+          canNavigatePrevious={selectedAssetIndex > 0}
+          onClose={() => {
+            setSelectedAsset(null);
+            setReviewQueue([]);
+          }}
+          onEditorialSaved={applySavedEditorial}
+          onNavigateNext={() => {
+            if (selectedAssetIndex >= 0 && selectedAssetIndex < reviewQueue.length - 1) {
+              setSelectedAsset(reviewQueue[selectedAssetIndex + 1]);
+            }
+          }}
+          onNavigatePrevious={() => {
+            if (selectedAssetIndex > 0) {
+              setSelectedAsset(reviewQueue[selectedAssetIndex - 1]);
+            }
+          }}
         />
       ) : null}
     </div>

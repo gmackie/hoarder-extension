@@ -45,11 +45,21 @@ def test_asset_editorial_state_is_normalized_and_survives_rescans(
             "tags": ["infrastructure", "museum"],
         }
 
+        moved_directory = tmp_path / "media" / "reviewed"
+        moved_directory.mkdir()
+        (tmp_path / "media" / "Museum Tour.mp4").rename(
+            moved_directory / "Museum Tour renamed.mp4"
+        )
         client.post("/api/scans")
 
         persisted = client.get(f"/api/assets/{asset_id}/editorial")
         assert persisted.status_code == 200
         assert persisted.json() == response.json()
+        assets = client.get("/api/assets").json()["items"]
+        assert [asset["id"] for asset in assets] == [asset_id]
+        assert assets[0]["files"][0]["relative_path"] == (
+            "reviewed/Museum Tour renamed.mp4"
+        )
     finally:
         client.__exit__(None, None, None)
 
@@ -91,6 +101,20 @@ def test_editorial_updates_validate_rating_workflow_and_asset_identity(
             f"/api/assets/{asset_id}/editorial",
             json={"workflow_state": "invented"},
         ).status_code == 422
+        assert client.patch(
+            f"/api/assets/{asset_id}/editorial", json={"favorite": None}
+        ).status_code == 422
+        assert client.patch(
+            f"/api/assets/{asset_id}/editorial", json={"workflow_state": None}
+        ).status_code == 422
+        client.patch(
+            f"/api/assets/{asset_id}/editorial", json={"tags": ["temporary"]}
+        )
+        cleared_tags = client.patch(
+            f"/api/assets/{asset_id}/editorial", json={"tags": None}
+        )
+        assert cleared_tags.status_code == 200
+        assert cleared_tags.json()["tags"] == []
         assert client.patch(
             "/api/assets/missing/editorial", json={"favorite": True}
         ).status_code == 404

@@ -18,7 +18,7 @@ type CuratedItem = {
 
 type CuratedChannelsProps = {
   apiBase: string;
-  onViewAsset: (asset: Asset) => void;
+  onViewAsset: (asset: Asset, queue: Asset[]) => void;
 };
 
 export function CuratedChannels({ apiBase, onViewAsset }: CuratedChannelsProps) {
@@ -31,6 +31,7 @@ export function CuratedChannels({ apiBase, onViewAsset }: CuratedChannelsProps) 
   const [editingDescription, setEditingDescription] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [deleteArmed, setDeleteArmed] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -95,6 +96,7 @@ export function CuratedChannels({ apiBase, onViewAsset }: CuratedChannelsProps) 
     setLoading(true);
     setError(null);
     setMessage(null);
+    setDeleteArmed(false);
     try {
       await loadItems(channel.id);
     } catch (reason: unknown) {
@@ -180,6 +182,11 @@ export function CuratedChannels({ apiBase, onViewAsset }: CuratedChannelsProps) 
 
   async function deleteChannel() {
     if (!selected) return;
+    if (!deleteArmed) {
+      setDeleteArmed(true);
+      setMessage("Click confirm delete to permanently remove this channel.");
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -191,6 +198,7 @@ export function CuratedChannels({ apiBase, onViewAsset }: CuratedChannelsProps) 
       setChannels((current) => current.filter((channel) => channel.id !== selected.id));
       setSelected(null);
       setItems([]);
+      setDeleteArmed(false);
       setMessage("Channel deleted");
     } catch (reason: unknown) {
       setError(reason instanceof Error ? reason.message : "Channel deletion failed");
@@ -227,7 +235,7 @@ export function CuratedChannels({ apiBase, onViewAsset }: CuratedChannelsProps) 
               Save channel
             </button>
             <button className="danger-action" disabled={saving} onClick={deleteChannel} type="button">
-              Delete channel
+              {deleteArmed ? "Confirm delete channel" : "Delete channel"}
             </button>
           </form>
           <div className="curated-items">
@@ -239,7 +247,10 @@ export function CuratedChannels({ apiBase, onViewAsset }: CuratedChannelsProps) 
               <article className="curated-item" key={item.asset_id}>
                 <button
                   className="curated-item-preview"
-                  onClick={() => onViewAsset(item.asset)}
+                  onClick={() => onViewAsset(
+                    item.asset,
+                    items.map((candidate) => candidate.asset),
+                  )}
                   type="button"
                 >
                   {item.asset.thumbnail_url ? (
@@ -249,7 +260,13 @@ export function CuratedChannels({ apiBase, onViewAsset }: CuratedChannelsProps) 
                   )}
                 </button>
                 <div className="curated-item-copy">
-                  <button onClick={() => onViewAsset(item.asset)} type="button">
+                  <button
+                    onClick={() => onViewAsset(
+                      item.asset,
+                      items.map((candidate) => candidate.asset),
+                    )}
+                    type="button"
+                  >
                     {item.asset.title}
                   </button>
                   <span>Position {index + 1}</span>

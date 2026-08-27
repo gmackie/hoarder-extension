@@ -22,6 +22,13 @@ class EditorialPatch(BaseModel):
     notes: str | None = Field(default=None, max_length=20_000)
     tags: list[str] | None = Field(default=None, max_length=50)
 
+    @field_validator("favorite", "workflow_state", mode="before")
+    @classmethod
+    def reject_null_required_updates(cls, value: Any) -> Any:
+        if value is None:
+            raise ValueError("This field cannot be null")
+        return value
+
     @field_validator("tags")
     @classmethod
     def validate_tags(cls, tags: list[str] | None) -> list[str] | None:
@@ -49,7 +56,9 @@ class CuratedChannelPatch(BaseModel):
     @field_validator("name")
     @classmethod
     def validate_name(cls, name: str | None) -> str | None:
-        if name is not None and not name.strip():
+        if name is None:
+            raise ValueError("Channel name cannot be null")
+        if not name.strip():
             raise ValueError("Channel name cannot be blank")
         return name
 
@@ -62,6 +71,13 @@ class CuratedChannelItemCreate(BaseModel):
 class CuratedChannelItemPatch(BaseModel):
     position: int | None = Field(default=None, ge=0)
     status: ChannelItemStatus | None = None
+
+    @field_validator("position", "status", mode="before")
+    @classmethod
+    def reject_null_updates(cls, value: Any) -> Any:
+        if value is None:
+            raise ValueError("This field cannot be null")
+        return value
 
 
 def create_app(

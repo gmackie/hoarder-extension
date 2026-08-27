@@ -602,6 +602,7 @@ h1 { margin: 0; font-size: clamp(2.5rem, 4vw, 4.25rem); line-height: 1; letter-s
   background: #0d1219;
 }
 .editorial-panel form { display: grid; gap: 13px; }
+.editorial-save-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .editorial-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .editorial-heading > div { display: grid; gap: 3px; }
 .editorial-heading span { color: var(--accent); font-size: .7rem; font-weight: 800; text-transform: uppercase; }
@@ -641,7 +642,7 @@ h1 { margin: 0; font-size: clamp(2.5rem, 4vw, 4.25rem); line-height: 1; letter-s
 .viewer-stage video, .viewer-stage img { display: block; width: 100%; max-height: 65vh; object-fit: contain; }
 .viewer-stage audio { width: min(680px, calc(100% - 40px)); }
 .viewer-footer { align-items: flex-start; border-top: 1px solid var(--line); }
-.viewer-footer > div { display: grid; min-width: 0; gap: 4px; }
+.viewer-file-details { display: grid; min-width: 0; gap: 4px; }
 .viewer-footer strong { overflow-wrap: anywhere; }
 .viewer-footer span, .viewer-footer p { margin: 0; color: var(--muted); font-size: .9rem; line-height: 1.45; }
 .viewer-footer a {
@@ -654,6 +655,13 @@ h1 { margin: 0; font-size: clamp(2.5rem, 4vw, 4.25rem); line-height: 1; letter-s
   text-decoration: none;
 }
 .viewer-footer a:visited { color: #d7c5ff; }
+.viewer-footer-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
 
 @media (max-width: 760px) {
   .app-shell { display: block; }

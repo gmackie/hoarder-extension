@@ -57,12 +57,15 @@ describe("AssetViewer", () => {
   });
 
   it("edits evaluation metadata and assigns the asset to a curated channel", async () => {
+    const onNext = vi.fn();
+    const onEditorialSaved = vi.fn();
     const fetch = vi.fn((input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
       if (url.endsWith("/api/assets/video-1/editorial") && init?.method === "PATCH") {
+        const payload = JSON.parse(String(init.body));
         return Promise.resolve({
           ok: true,
-          json: async () => JSON.parse(String(init.body)),
+          json: async () => ({ ...payload, asset_id: "video-1", tags: ["history", "museum"] }),
         });
       }
       if (url.endsWith("/api/assets/video-1/editorial")) {
@@ -100,7 +103,16 @@ describe("AssetViewer", () => {
       return Promise.resolve({ ok: false, status: 404, json: async () => ({}) });
     });
     vi.stubGlobal("fetch", fetch);
-    render(<AssetViewer apiBase="http://catalog.test" asset={video} onClose={() => {}} />);
+    render(
+      <AssetViewer
+        apiBase="http://catalog.test"
+        asset={video}
+        canNavigateNext
+        onClose={() => {}}
+        onEditorialSaved={onEditorialSaved}
+        onNavigateNext={onNext}
+      />,
+    );
 
     fireEvent.click(await screen.findByRole("button", { name: "4 stars" }));
     fireEvent.click(screen.getByRole("button", { name: "Favorite" }));
@@ -131,6 +143,14 @@ describe("AssetViewer", () => {
         },
       );
     });
+    expect(onEditorialSaved).toHaveBeenCalledWith(expect.objectContaining({
+      asset_id: "video-1",
+      rating: 4,
+      tags: ["history", "museum"],
+    }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Save and next" }));
+    await waitFor(() => expect(onNext).toHaveBeenCalledOnce());
 
     fireEvent.change(screen.getByLabelText("Curated channel"), {
       target: { value: "channel-1" },
@@ -148,5 +168,29 @@ describe("AssetViewer", () => {
       );
     });
     expect(await screen.findByText("Added to Museum Television")).toBeInTheDocument();
+  });
+
+  it("navigates the current review queue with buttons and arrow keys", () => {
+    const onPrevious = vi.fn();
+    const onNext = vi.fn();
+    vi.stubGlobal("fetch", vi.fn(() => new Promise(() => {})));
+
+    render(
+      <AssetViewer
+        apiBase=""
+        asset={video}
+        canNavigateNext
+        canNavigatePrevious
+        onClose={() => {}}
+        onNavigateNext={onNext}
+        onNavigatePrevious={onPrevious}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Next asset" }));
+    fireEvent.keyDown(window, { key: "ArrowLeft" });
+
+    expect(onNext).toHaveBeenCalledOnce();
+    expect(onPrevious).toHaveBeenCalledOnce();
   });
 });

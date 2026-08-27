@@ -64,6 +64,16 @@ def test_curated_channels_manage_ordered_asset_membership(tmp_path: Path) -> Non
         ]
         assert [item["position"] for item in listing.json()["items"]] == [0, 1]
 
+        (media / "Second.mp4").rename(media / "Second renamed.mp4")
+        client.post("/api/scans")
+        persisted_membership = client.get(
+            f"/api/curated-channels/{channel['id']}/items"
+        )
+        assert [item["asset_id"] for item in persisted_membership.json()["items"]] == [
+            asset_ids["Second"],
+            asset_ids["First"],
+        ]
+
         channels = client.get("/api/curated-channels")
         assert channels.status_code == 200
         assert channels.json()["items"][0]["item_count"] == 2
@@ -98,11 +108,24 @@ def test_curated_channels_validate_resources_and_support_editing(
         assert updated.status_code == 200
         assert updated.json()["name"] == "Finished"
 
+        assert client.patch(
+            f"/api/curated-channels/{channel_id}", json={"name": None}
+        ).status_code == 422
+
         assert client.post(
             f"/api/curated-channels/{channel_id}/items",
             json={"asset_id": "missing"},
         ).status_code == 404
         assert client.get("/api/curated-channels/missing/items").status_code == 404
+
+        assert client.patch(
+            f"/api/curated-channels/{channel_id}/items/missing",
+            json={"position": None},
+        ).status_code == 422
+        assert client.patch(
+            f"/api/curated-channels/{channel_id}/items/missing",
+            json={"status": None},
+        ).status_code == 422
 
         deleted = client.delete(f"/api/curated-channels/{channel_id}")
         assert deleted.status_code == 204

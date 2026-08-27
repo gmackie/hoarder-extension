@@ -150,8 +150,10 @@ resource endpoints are `GET /api/channels`,
 
 Open any asset in the library to review it alongside playback. Ratings use a
 one-to-five scale; favorites, notes, tags, and workflow state are optional.
-The keyboard shortcuts `1`–`5` set a rating, `F` toggles favorite, and `Esc`
-closes the viewer when focus is not inside a form field.
+The keyboard shortcuts `1`–`5` set a rating, `F` toggles favorite, the left and
+right arrows move through the current catalog or curated-channel queue, and
+`Esc` closes the viewer when focus is not inside a form field. **Save and next**
+persists the evaluation before advancing.
 
 Editorial metadata is stored against the stable asset ID rather than a file
 path, so rescans and reconciled file moves do not overwrite it. Tags are

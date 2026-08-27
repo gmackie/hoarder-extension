@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
@@ -59,6 +59,108 @@ describe("Hoarder Library navigation", () => {
         "http://catalog.test/api/assets/asset-1/stream#t=0.1",
       );
     });
+  });
+
+  it("does not let a slow prior catalog request replace the active lens", async () => {
+    let resolveInbox: ((value: unknown) => void) | undefined;
+    let resolveVideos: ((value: unknown) => void) | undefined;
+    const inboxResponse = new Promise((resolve) => { resolveInbox = resolve; });
+    const videoResponse = new Promise((resolve) => { resolveVideos = resolve; });
+    const fetch = vi.fn((input: string | URL | Request) => (
+      String(input).includes("media_type=video") ? videoResponse : inboxResponse
+    ));
+    vi.stubGlobal("fetch", fetch);
+    render(<App apiBase="http://catalog.test" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Videos" }));
+    resolveVideos?.({
+      ok: true,
+      json: async () => ({
+        items: [{
+          id: "active-video",
+          title: "Active video result",
+          media_type: "video",
+          status: "available",
+          files: [],
+        }],
+        total: 1,
+      }),
+    });
+    expect(await screen.findByText("Active video result")).toBeInTheDocument();
+
+    await act(async () => {
+      resolveInbox?.({
+        ok: true,
+        json: async () => ({
+          items: [{
+            id: "stale-image",
+            title: "Stale inbox result",
+            media_type: "image",
+            status: "available",
+            files: [],
+          }],
+          total: 1,
+        }),
+      });
+      await inboxResponse;
+    });
+
+    expect(screen.queryByText("Stale inbox result")).not.toBeInTheDocument();
+    expect(screen.getByText("Active video result")).toBeInTheDocument();
+  });
+
+  it("walks forward and backward through the visible review queue", async () => {
+    const assets = [
+      {
+        id: "asset-1",
+        title: "First Film",
+        media_type: "video",
+        status: "available",
+        files: [{ id: 1, relative_path: "First Film.mp4", size: 2048 }],
+      },
+      {
+        id: "asset-2",
+        title: "Second Film",
+        media_type: "video",
+        status: "available",
+        files: [{ id: 2, relative_path: "Second Film.mp4", size: 2048 }],
+      },
+    ];
+    const fetch = vi.fn((input: string | URL | Request) => {
+      const url = String(input);
+      const editorialMatch = url.match(/\/api\/assets\/(asset-[12])\/editorial$/);
+      if (editorialMatch) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            asset_id: editorialMatch[1],
+            rating: null,
+            favorite: false,
+            workflow_state: "inbox",
+            notes: "",
+            tags: [],
+          }),
+        });
+      }
+      if (url.endsWith("/api/curated-channels")) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [], total: 0 }) });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({ items: assets, total: assets.length }),
+      });
+    });
+    vi.stubGlobal("fetch", fetch);
+    render(<App apiBase="http://catalog.test" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "View First Film" }));
+    expect(screen.getByRole("dialog", { name: "First Film" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Next asset" }));
+    expect(await screen.findByRole("dialog", { name: "Second Film" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Previous asset" }));
+    expect(await screen.findByRole("dialog", { name: "First Film" })).toBeInTheDocument();
   });
 
   it("uses associated video artwork without listing it as an image asset", async () => {
@@ -351,6 +453,21 @@ describe("Hoarder Library navigation", () => {
       );
     });
     expect(await screen.findByText("Order saved")).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Delete channel" })).toBeEnabled();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Delete channel" }));
+    expect(screen.getByRole("button", { name: "Confirm delete channel" })).toBeInTheDocument();
+    expect(fetch.mock.calls.some(([, init]) => init?.method === "DELETE")).toBe(false);
+
+    fireEvent.click(screen.getByRole("button", { name: "Confirm delete channel" }));
+    await waitFor(() => {
+      expect(fetch).toHaveBeenCalledWith(
+        "http://catalog.test/api/curated-channels/channel-1",
+        { method: "DELETE" },
+      );
+    });
   });
 
   it("shows storage scan progress in the Jobs lens", async () => {

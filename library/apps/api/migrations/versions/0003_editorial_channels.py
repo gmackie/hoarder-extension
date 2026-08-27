@@ -39,7 +39,6 @@ def upgrade() -> None:
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("name", sa.String(length=120), nullable=False, unique=True),
     )
-    op.create_index("ix_tags_name", "tags", ["name"])
     op.create_table(
         "asset_tags",
         sa.Column(

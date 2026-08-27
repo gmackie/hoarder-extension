@@ -104,7 +104,9 @@ class AssetEditorial(Base):
     workflow_state: Mapped[str] = mapped_column(String(24), default="inbox")
     notes: Mapped[str] = mapped_column(Text, default="")
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
     )
     asset: Mapped[Asset] = relationship(back_populates="editorial")
 
@@ -113,7 +115,7 @@ class Tag(Base):
     __tablename__ = "tags"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(120), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(120), unique=True)
     assets: Mapped[list[Asset]] = relationship(
         secondary="asset_tags", back_populates="tags"
     )
@@ -142,7 +144,9 @@ class CuratedChannel(Base):
         DateTime(timezone=True), default=lambda: datetime.now(UTC)
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
     )
     items: Mapped[list["CuratedChannelItem"]] = relationship(
         back_populates="channel",
