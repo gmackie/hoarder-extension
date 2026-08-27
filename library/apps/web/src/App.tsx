@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useState } from "react";
 
 import { AssetViewer, type Asset } from "./AssetViewer";
 
@@ -32,9 +32,16 @@ const mediaTypes: Partial<Record<Lens, Asset["media_type"]>> = {
   Images: "image",
 };
 
+const PAGE_SIZE = 50;
+
 export function App({ apiBase }: AppProps) {
   const [activeLens, setActiveLens] = useState<Lens>("Inbox");
   const [assets, setAssets] = useState<Asset[]>([]);
+  const [totalAssets, setTotalAssets] = useState(0);
+  const [offset, setOffset] = useState(0);
+  const [searchDraft, setSearchDraft] = useState("");
+  const [query, setQuery] = useState("");
+  const [loadingAssets, setLoadingAssets] = useState(false);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [scanStatus, setScanStatus] = useState<string | null>(null);
@@ -42,28 +49,53 @@ export function App({ apiBase }: AppProps) {
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
 
   const loadAssets = useCallback(
-    async (lens: Lens) => {
+    async (lens: Lens, pageOffset: number, searchQuery: string) => {
       const mediaType = mediaTypes[lens];
       if (!mediaType && lens !== "Inbox") return;
       setError(null);
-      const path = mediaType
-        ? `/api/assets?media_type=${mediaType}`
-        : "/api/assets?limit=50&offset=0";
+      setLoadingAssets(true);
+      const parameters = new URLSearchParams();
+      if (mediaType) parameters.set("media_type", mediaType);
+      parameters.set("limit", String(PAGE_SIZE));
+      parameters.set("offset", String(pageOffset));
+      if (searchQuery) parameters.set("q", searchQuery);
       try {
-        const response = await fetch(`${apiBase}${path}`);
+        const response = await fetch(`${apiBase}/api/assets?${parameters}`);
         if (!response.ok) throw new Error(`Catalog request failed (${response.status})`);
-        const payload = (await response.json()) as { items: Asset[] };
+        const payload = (await response.json()) as { items: Asset[]; total: number };
         setAssets(payload.items);
+        setTotalAssets(payload.total);
       } catch (reason: unknown) {
         setError(reason instanceof Error ? reason.message : "Catalog request failed");
+      } finally {
+        setLoadingAssets(false);
       }
     },
     [apiBase],
   );
 
   useEffect(() => {
-    void loadAssets(activeLens);
-  }, [activeLens, loadAssets]);
+    void loadAssets(activeLens, offset, query);
+  }, [activeLens, loadAssets, offset, query]);
+
+  const showsCatalog = activeLens === "Inbox" || Boolean(mediaTypes[activeLens]);
+  const firstVisible = assets.length > 0 ? offset + 1 : 0;
+  const lastVisible = assets.length > 0 ? offset + assets.length : 0;
+  const oldestOffset = totalAssets > 0
+    ? Math.floor((totalAssets - 1) / PAGE_SIZE) * PAGE_SIZE
+    : 0;
+
+  function submitSearch(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setOffset(0);
+    setQuery(searchDraft.trim());
+  }
+
+  function clearSearch() {
+    setSearchDraft("");
+    setOffset(0);
+    setQuery("");
+  }
 
   async function scanStorage() {
     setScanning(true);
@@ -121,6 +153,9 @@ export function App({ apiBase }: AppProps) {
               onClick={() => {
                 setActiveLens(lens);
                 setSelectedAsset(null);
+                setOffset(0);
+                setSearchDraft("");
+                setQuery("");
               }}
               type="button"
             >
@@ -141,8 +176,55 @@ export function App({ apiBase }: AppProps) {
         </header>
         {scanStatus ? <p aria-live="polite" className="scan-status">{scanStatus}</p> : null}
         {error ? <p role="alert">{error}</p> : null}
-        {activeLens === "Inbox" || mediaTypes[activeLens] ? (
-          <section aria-label={`${activeLens} catalog`} className="asset-grid">
+        {showsCatalog ? (
+          <>
+            <div className="catalog-toolbar">
+              <form aria-label="Search media" onSubmit={submitSearch} role="search">
+                <input
+                  aria-label="Search library"
+                  onChange={(event) => setSearchDraft(event.target.value)}
+                  placeholder={`Search ${activeLens.toLowerCase()}…`}
+                  type="search"
+                  value={searchDraft}
+                />
+                <button type="submit">Search</button>
+                {query || searchDraft ? (
+                  <button className="secondary-action" onClick={clearSearch} type="button">
+                    Clear
+                  </button>
+                ) : null}
+              </form>
+              <nav aria-label="Catalog pages" className="catalog-pagination">
+                <span aria-live="polite">
+                  {loadingAssets ? "Loading…" : `${firstVisible}–${lastVisible} of ${totalAssets}`}
+                </span>
+                <button disabled={offset === 0} onClick={() => setOffset(0)} type="button">
+                  Newest
+                </button>
+                <button
+                  disabled={offset === 0}
+                  onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
+                  type="button"
+                >
+                  Newer
+                </button>
+                <button
+                  disabled={offset + assets.length >= totalAssets}
+                  onClick={() => setOffset(offset + PAGE_SIZE)}
+                  type="button"
+                >
+                  Older
+                </button>
+                <button
+                  disabled={offset >= oldestOffset}
+                  onClick={() => setOffset(oldestOffset)}
+                  type="button"
+                >
+                  Oldest
+                </button>
+              </nav>
+            </div>
+            <section aria-label={`${activeLens} catalog`} className="asset-grid">
             {assets.map((asset) => (
               <button
                 aria-label={`View ${asset.title}`}
@@ -183,11 +265,16 @@ export function App({ apiBase }: AppProps) {
             ))}
             {assets.length === 0 ? (
               <div className="empty-state">
-                <strong>No media here yet</strong>
-                <span>Scan storage or choose another library section.</span>
+                <strong>{loadingAssets ? "Loading media…" : "No media found"}</strong>
+                <span>
+                  {query
+                    ? "Clear the search or try another title."
+                    : "Scan storage or choose another library section."}
+                </span>
               </div>
             ) : null}
-          </section>
+            </section>
+          </>
         ) : null}
         {activeLens === "Jobs" ? (
           <section aria-label="Background jobs" className="jobs-list">

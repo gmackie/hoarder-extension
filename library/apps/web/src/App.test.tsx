@@ -51,7 +51,7 @@ describe("Hoarder Library navigation", () => {
 
     expect(await screen.findByText("Museum Tour")).toBeInTheDocument();
     expect(fetch).toHaveBeenCalledWith(
-      "http://catalog.test/api/assets?media_type=video",
+      "http://catalog.test/api/assets?media_type=video&limit=50&offset=0",
     );
   });
 
@@ -82,6 +82,66 @@ describe("Hoarder Library navigation", () => {
     expect(document.querySelector(".asset-preview img")).toHaveAttribute(
       "src",
       "http://catalog.test/api/assets/video-1/thumbnail",
+    );
+  });
+
+  it("can page into older videos and render their associated thumbnails", async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ items: [], total: 51, limit: 50, offset: 0 }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          items: [
+            {
+              id: "older-video",
+              title: "Older archived video",
+              media_type: "video",
+              status: "available",
+              thumbnail_url: "/api/assets/older-video/thumbnail",
+              files: [{ id: 2, relative_path: "youtube/channel/older-video.mp4", size: 4096 }],
+            },
+          ],
+          total: 51,
+          limit: 50,
+          offset: 50,
+        }),
+      });
+    vi.stubGlobal("fetch", fetch);
+
+    render(<App apiBase="http://catalog.test" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Older" }));
+
+    expect(await screen.findByText("Older archived video")).toBeInTheDocument();
+    expect(fetch).toHaveBeenLastCalledWith(
+      "http://catalog.test/api/assets?limit=50&offset=50",
+    );
+    expect(document.querySelector(".asset-preview img")).toHaveAttribute(
+      "src",
+      "http://catalog.test/api/assets/older-video/thumbnail",
+    );
+    expect(screen.getByText("51–51 of 51")).toBeInTheDocument();
+  });
+
+  it("searches within the active library lens", async () => {
+    const fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ items: [], total: 0, limit: 50, offset: 0 }),
+    });
+    vi.stubGlobal("fetch", fetch);
+    render(<App apiBase="http://catalog.test" />);
+
+    fireEvent.change(await screen.findByRole("searchbox", { name: "Search library" }), {
+      target: { value: "museum" },
+    });
+    fireEvent.submit(screen.getByRole("search"));
+
+    expect(fetch).toHaveBeenLastCalledWith(
+      "http://catalog.test/api/assets?limit=50&offset=0&q=museum",
     );
   });
 
