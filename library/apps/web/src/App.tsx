@@ -1,6 +1,7 @@
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
 import { AssetViewer, type Asset } from "./AssetViewer";
+import { CuratedChannels } from "./CuratedChannels";
 
 export type AppProps = { apiBase: string };
 
@@ -48,6 +49,12 @@ export function App({ apiBase }: AppProps) {
   const [offset, setOffset] = useState(0);
   const [searchDraft, setSearchDraft] = useState("");
   const [query, setQuery] = useState("");
+  const [workflowDraft, setWorkflowDraft] = useState("");
+  const [workflowFilter, setWorkflowFilter] = useState("");
+  const [favoritesDraft, setFavoritesDraft] = useState(false);
+  const [favoritesOnly, setFavoritesOnly] = useState(false);
+  const [tagDraft, setTagDraft] = useState("");
+  const [tagFilter, setTagFilter] = useState("");
   const [loadingAssets, setLoadingAssets] = useState(false);
   const [loadingChannels, setLoadingChannels] = useState(false);
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -63,6 +70,9 @@ export function App({ apiBase }: AppProps) {
       pageOffset: number,
       searchQuery: string,
       channelId?: string,
+      favorite?: boolean,
+      workflowState?: string,
+      tag?: string,
     ) => {
       const mediaType = mediaTypes[lens];
       if (!mediaType && lens !== "Inbox") return;
@@ -73,6 +83,9 @@ export function App({ apiBase }: AppProps) {
       parameters.set("limit", String(PAGE_SIZE));
       parameters.set("offset", String(pageOffset));
       if (searchQuery) parameters.set("q", searchQuery);
+      if (favorite) parameters.set("favorite", "true");
+      if (workflowState) parameters.set("workflow_state", workflowState);
+      if (tag) parameters.set("tag", tag);
       try {
         const resource = channelId
           ? `/api/channels/${encodeURIComponent(channelId)}/assets`
@@ -121,8 +134,25 @@ export function App({ apiBase }: AppProps) {
   const selectedChannelId = selectedChannel?.id;
 
   useEffect(() => {
-    void loadAssets(activeLens, offset, query, selectedChannelId);
-  }, [activeLens, loadAssets, offset, query, selectedChannelId]);
+    void loadAssets(
+      activeLens,
+      offset,
+      query,
+      selectedChannelId,
+      favoritesOnly,
+      workflowFilter,
+      tagFilter,
+    );
+  }, [
+    activeLens,
+    favoritesOnly,
+    loadAssets,
+    offset,
+    query,
+    selectedChannelId,
+    tagFilter,
+    workflowFilter,
+  ]);
 
   useEffect(() => {
     if (activeLens !== "Source Channels") return;
@@ -172,6 +202,12 @@ export function App({ apiBase }: AppProps) {
     setOffset(0);
     setSearchDraft("");
     setQuery("");
+    setWorkflowDraft("");
+    setWorkflowFilter("");
+    setFavoritesDraft(false);
+    setFavoritesOnly(false);
+    setTagDraft("");
+    setTagFilter("");
   }
 
   function submitSearch(event: FormEvent<HTMLFormElement>) {
@@ -184,6 +220,23 @@ export function App({ apiBase }: AppProps) {
     setSearchDraft("");
     setOffset(0);
     setQuery("");
+  }
+
+  function applyEditorialFilters() {
+    setOffset(0);
+    setWorkflowFilter(workflowDraft);
+    setFavoritesOnly(favoritesDraft);
+    setTagFilter(tagDraft.trim());
+  }
+
+  function clearEditorialFilters() {
+    setOffset(0);
+    setWorkflowDraft("");
+    setWorkflowFilter("");
+    setFavoritesDraft(false);
+    setFavoritesOnly(false);
+    setTagDraft("");
+    setTagFilter("");
   }
 
   async function scanStorage() {
@@ -261,21 +314,29 @@ export function App({ apiBase }: AppProps) {
           <>
             <CatalogToolbar
               activeLens={activeLens}
+              applyEditorialFilters={applyEditorialFilters}
+              clearEditorialFilters={clearEditorialFilters}
               firstVisible={firstVisible}
+              favoritesDraft={favoritesDraft}
               lastPageOffset={lastPageOffset}
               lastVisible={lastVisible}
               loading={loadingItems}
               offset={offset}
               query={query}
               searchDraft={searchDraft}
+              setFavoritesDraft={setFavoritesDraft}
               selectedChannel={selectedChannel}
               setOffset={setOffset}
               setSearchDraft={setSearchDraft}
+              setTagDraft={setTagDraft}
+              setWorkflowDraft={setWorkflowDraft}
               showsChannels={showsChannels}
               submitSearch={submitSearch}
               clearSearch={clearSearch}
+              tagDraft={tagDraft}
               totalItems={totalItems}
               visibleItems={visibleItems}
+              workflowDraft={workflowDraft}
             />
             {showsChannels ? (
               <section aria-label="Source channels" className="channel-grid">
@@ -344,10 +405,7 @@ export function App({ apiBase }: AppProps) {
           </>
         ) : null}
         {activeLens === "Curated Channels" ? (
-          <div className="empty-state standalone-empty-state">
-            <strong>Curated channels are next</strong>
-            <span>Build continuous collections from the source channels you trust.</span>
-          </div>
+          <CuratedChannels apiBase={apiBase} onViewAsset={setSelectedAsset} />
         ) : null}
         {activeLens === "Jobs" ? (
           <section aria-label="Background jobs" className="jobs-list">
@@ -374,7 +432,10 @@ export function App({ apiBase }: AppProps) {
 
 type CatalogToolbarProps = {
   activeLens: Lens;
+  applyEditorialFilters: () => void;
+  clearEditorialFilters: () => void;
   clearSearch: () => void;
+  favoritesDraft: boolean;
   firstVisible: number;
   lastPageOffset: number;
   lastVisible: number;
@@ -383,18 +444,26 @@ type CatalogToolbarProps = {
   query: string;
   searchDraft: string;
   selectedChannel: SourceChannel | null;
+  setFavoritesDraft: (value: boolean) => void;
   setOffset: (value: number) => void;
   setSearchDraft: (value: string) => void;
+  setTagDraft: (value: string) => void;
+  setWorkflowDraft: (value: string) => void;
   showsChannels: boolean;
   submitSearch: (event: FormEvent<HTMLFormElement>) => void;
+  tagDraft: string;
   totalItems: number;
   visibleItems: number;
+  workflowDraft: string;
 };
 
 function CatalogToolbar(props: CatalogToolbarProps) {
   const {
     activeLens,
+    applyEditorialFilters,
+    clearEditorialFilters,
     clearSearch,
+    favoritesDraft,
     firstVisible,
     lastPageOffset,
     lastVisible,
@@ -403,38 +472,85 @@ function CatalogToolbar(props: CatalogToolbarProps) {
     query,
     searchDraft,
     selectedChannel,
+    setFavoritesDraft,
     setOffset,
     setSearchDraft,
+    setTagDraft,
+    setWorkflowDraft,
     showsChannels,
     submitSearch,
+    tagDraft,
     totalItems,
     visibleItems,
+    workflowDraft,
   } = props;
   return (
     <div className="catalog-toolbar">
-      <form
-        aria-label={showsChannels ? "Search source channels" : "Search media"}
-        onSubmit={submitSearch}
-        role="search"
-      >
-        <input
-          aria-label="Search library"
-          onChange={(event) => setSearchDraft(event.target.value)}
-          placeholder={
-            showsChannels
-              ? "Search source channels…"
-              : `Search ${selectedChannel?.title ?? activeLens.toLowerCase()}…`
-          }
-          type="search"
-          value={searchDraft}
-        />
-        <button type="submit">Search</button>
-        {query || searchDraft ? (
-          <button className="secondary-action" onClick={clearSearch} type="button">
-            Clear
-          </button>
+      <div className="catalog-query-controls">
+        <form
+          aria-label={showsChannels ? "Search source channels" : "Search media"}
+          onSubmit={submitSearch}
+          role="search"
+        >
+          <input
+            aria-label="Search library"
+            onChange={(event) => setSearchDraft(event.target.value)}
+            placeholder={
+              showsChannels
+                ? "Search source channels…"
+                : `Search ${selectedChannel?.title ?? activeLens.toLowerCase()}…`
+            }
+            type="search"
+            value={searchDraft}
+          />
+          <button type="submit">Search</button>
+          {query || searchDraft ? (
+            <button className="secondary-action" onClick={clearSearch} type="button">
+              Clear
+            </button>
+          ) : null}
+        </form>
+        {!showsChannels ? (
+          <div className="editorial-filters">
+            <label>
+              <span>Workflow filter</span>
+              <select
+                aria-label="Workflow filter"
+                onChange={(event) => setWorkflowDraft(event.target.value)}
+                value={workflowDraft}
+              >
+                <option value="">Any workflow</option>
+                <option value="inbox">Inbox</option>
+                <option value="candidate">Candidate</option>
+                <option value="reviewed">Reviewed</option>
+                <option value="selected">Selected</option>
+                <option value="archived">Archived</option>
+              </select>
+            </label>
+            <button
+              aria-pressed={favoritesDraft}
+              className="filter-toggle"
+              onClick={() => setFavoritesDraft(!favoritesDraft)}
+              type="button"
+            >
+              Favorites only
+            </button>
+            <label>
+              <span>Tag filter</span>
+              <input
+                aria-label="Tag filter"
+                onChange={(event) => setTagDraft(event.target.value)}
+                placeholder="Tag"
+                value={tagDraft}
+              />
+            </label>
+            <button onClick={applyEditorialFilters} type="button">Apply filters</button>
+            <button className="secondary-action" onClick={clearEditorialFilters} type="button">
+              Reset filters
+            </button>
+          </div>
         ) : null}
-      </form>
+      </div>
       <nav aria-label="Catalog pages" className="catalog-pagination">
         <span aria-live="polite">
           {loading ? "Loading…" : `${firstVisible}–${lastVisible} of ${totalItems}`}

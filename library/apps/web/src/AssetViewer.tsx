@@ -1,4 +1,13 @@
-import { useEffect } from "react";
+import { type FormEvent, useEffect, useState } from "react";
+
+export type EditorialState = {
+  asset_id: string;
+  rating: number | null;
+  favorite: boolean;
+  workflow_state: "inbox" | "candidate" | "reviewed" | "selected" | "archived";
+  notes: string;
+  tags: string[];
+};
 
 export type Asset = {
   id: string;
@@ -6,13 +15,29 @@ export type Asset = {
   media_type: "video" | "audio" | "image";
   status: string;
   thumbnail_url?: string | null;
+  editorial?: EditorialState;
   files: Array<{ id: number; relative_path: string; size: number }>;
+};
+
+type CuratedChannelSummary = {
+  id: string;
+  name: string;
+  description: string;
+  item_count: number;
 };
 
 type AssetViewerProps = {
   apiBase: string;
   asset: Asset;
   onClose: () => void;
+};
+
+const EMPTY_EDITORIAL: Omit<EditorialState, "asset_id"> = {
+  rating: null,
+  favorite: false,
+  workflow_state: "inbox",
+  notes: "",
+  tags: [],
 };
 
 export function AssetViewer({ apiBase, asset, onClose }: AssetViewerProps) {
@@ -22,14 +47,125 @@ export function AssetViewer({ apiBase, asset, onClose }: AssetViewerProps) {
     : undefined;
   const file = asset.files[0];
   const extension = file?.relative_path.split(".").pop()?.toLowerCase();
+  const [editorial, setEditorial] = useState<EditorialState>(
+    asset.editorial ?? { asset_id: asset.id, ...EMPTY_EDITORIAL },
+  );
+  const [tagsDraft, setTagsDraft] = useState(editorial.tags.join(", "));
+  const [channels, setChannels] = useState<CuratedChannelSummary[]>([]);
+  const [selectedChannelId, setSelectedChannelId] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+    let active = true;
+    Promise.all([
+      fetch(`${apiBase}/api/assets/${asset.id}/editorial`).then((response) => {
+        if (!response.ok) throw new Error(`Evaluation request failed (${response.status})`);
+        return response.json() as Promise<EditorialState>;
+      }),
+      fetch(`${apiBase}/api/curated-channels`).then((response) => {
+        if (!response.ok) throw new Error(`Channel request failed (${response.status})`);
+        return response.json() as Promise<{ items: CuratedChannelSummary[] }>;
+      }),
+    ])
+      .then(([nextEditorial, channelPayload]) => {
+        if (!active) return;
+        setEditorial(nextEditorial);
+        setTagsDraft(nextEditorial.tags.join(", "));
+        setChannels(channelPayload.items);
+      })
+      .catch((reason: unknown) => {
+        if (active) {
+          setError(reason instanceof Error ? reason.message : "Metadata request failed");
+        }
+      });
+    return () => {
+      active = false;
     };
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [apiBase, asset.id]);
+
+  useEffect(() => {
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onClose();
+        return;
+      }
+      const target = event.target as HTMLElement | null;
+      if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return;
+      if (/^[1-5]$/.test(event.key)) {
+        setEditorial((current) => ({ ...current, rating: Number(event.key) }));
+      } else if (event.key.toLowerCase() === "f") {
+        event.preventDefault();
+        setEditorial((current) => ({ ...current, favorite: !current.favorite }));
+      }
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
   }, [onClose]);
+
+  async function saveEditorial(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSaving(true);
+    setError(null);
+    setStatusMessage(null);
+    const tags = tagsDraft
+      .split(",")
+      .map((tag) => tag.trim())
+      .filter(Boolean);
+    const payload = {
+      rating: editorial.rating,
+      favorite: editorial.favorite,
+      workflow_state: editorial.workflow_state,
+      notes: editorial.notes,
+      tags,
+    };
+    try {
+      const response = await fetch(`${apiBase}/api/assets/${asset.id}/editorial`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) throw new Error(`Evaluation save failed (${response.status})`);
+      const saved = (await response.json()) as EditorialState;
+      setEditorial({ ...editorial, ...saved, asset_id: asset.id, tags });
+      setTagsDraft(tags.join(", "));
+      setStatusMessage("Evaluation saved");
+    } catch (reason: unknown) {
+      setError(reason instanceof Error ? reason.message : "Evaluation save failed");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function addToChannel() {
+    const channel = channels.find((candidate) => candidate.id === selectedChannelId);
+    if (!channel) return;
+    setSaving(true);
+    setError(null);
+    setStatusMessage(null);
+    try {
+      const response = await fetch(
+        `${apiBase}/api/curated-channels/${encodeURIComponent(channel.id)}/items`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ asset_id: asset.id, status: "candidate" }),
+        },
+      );
+      if (!response.ok) {
+        const message = response.status === 409
+          ? "This asset is already in that channel"
+          : `Channel assignment failed (${response.status})`;
+        throw new Error(message);
+      }
+      setStatusMessage(`Added to ${channel.name}`);
+    } catch (reason: unknown) {
+      setError(reason instanceof Error ? reason.message : "Channel assignment failed");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
     <div className="viewer-backdrop" onMouseDown={onClose}>
@@ -50,16 +186,121 @@ export function AssetViewer({ apiBase, asset, onClose }: AssetViewerProps) {
           </button>
         </header>
 
-        <div className="viewer-stage">
-          {asset.media_type === "video" ? (
-            <video controls poster={thumbnailUrl} preload="metadata" src={streamUrl} />
-          ) : null}
-          {asset.media_type === "audio" ? (
-            <audio controls preload="metadata" src={streamUrl} />
-          ) : null}
-          {asset.media_type === "image" ? (
-            <img alt={asset.title} src={streamUrl} />
-          ) : null}
+        <div className="viewer-workspace">
+          <div className="viewer-stage">
+            {asset.media_type === "video" ? (
+              <video controls poster={thumbnailUrl} preload="metadata" src={streamUrl} />
+            ) : null}
+            {asset.media_type === "audio" ? (
+              <audio controls preload="metadata" src={streamUrl} />
+            ) : null}
+            {asset.media_type === "image" ? (
+              <img alt={asset.title} src={streamUrl} />
+            ) : null}
+          </div>
+
+          <aside className="editorial-panel">
+            <form onSubmit={saveEditorial}>
+              <div className="editorial-heading">
+                <div>
+                  <span>Evaluation</span>
+                  <strong>Review this asset</strong>
+                </div>
+                <button
+                  aria-keyshortcuts="f"
+                  aria-label="Favorite"
+                  aria-pressed={editorial.favorite}
+                  className="favorite-button"
+                  onClick={() => setEditorial((current) => ({
+                    ...current,
+                    favorite: !current.favorite,
+                  }))}
+                  type="button"
+                >
+                  {editorial.favorite ? "★ Favorite" : "☆ Favorite"}
+                </button>
+              </div>
+              <fieldset className="rating-control">
+                <legend>Rating</legend>
+                <div>
+                  {[1, 2, 3, 4, 5].map((rating) => (
+                    <button
+                      aria-label={`${rating} ${rating === 1 ? "star" : "stars"}`}
+                      aria-pressed={editorial.rating === rating}
+                      key={rating}
+                      onClick={() => setEditorial((current) => ({ ...current, rating }))}
+                      type="button"
+                    >
+                      ★
+                    </button>
+                  ))}
+                </div>
+              </fieldset>
+              <label>
+                Workflow state
+                <select
+                  onChange={(event) => setEditorial((current) => ({
+                    ...current,
+                    workflow_state: event.target.value as EditorialState["workflow_state"],
+                  }))}
+                  value={editorial.workflow_state}
+                >
+                  <option value="inbox">Inbox</option>
+                  <option value="candidate">Candidate</option>
+                  <option value="reviewed">Reviewed</option>
+                  <option value="selected">Selected</option>
+                  <option value="archived">Archived</option>
+                </select>
+              </label>
+              <label>
+                Tags
+                <input
+                  onChange={(event) => setTagsDraft(event.target.value)}
+                  placeholder="history, music, reference"
+                  value={tagsDraft}
+                />
+              </label>
+              <label>
+                Notes
+                <textarea
+                  onChange={(event) => setEditorial((current) => ({
+                    ...current,
+                    notes: event.target.value,
+                  }))}
+                  rows={4}
+                  value={editorial.notes}
+                />
+              </label>
+              <button className="primary-action" disabled={saving} type="submit">
+                {saving ? "Saving…" : "Save evaluation"}
+              </button>
+            </form>
+
+            <div className="channel-assignment">
+              <label>
+                Curated channel
+                <select
+                  onChange={(event) => setSelectedChannelId(event.target.value)}
+                  value={selectedChannelId}
+                >
+                  <option value="">Choose a channel…</option>
+                  {channels.map((channel) => (
+                    <option key={channel.id} value={channel.id}>{channel.name}</option>
+                  ))}
+                </select>
+              </label>
+              <button
+                disabled={!selectedChannelId || saving}
+                onClick={addToChannel}
+                type="button"
+              >
+                Add to channel
+              </button>
+            </div>
+            {statusMessage ? <p aria-live="polite" className="editorial-status">{statusMessage}</p> : null}
+            {error ? <p role="alert">{error}</p> : null}
+            <small className="shortcut-hint">Shortcuts: 1–5 rate · F favorite · Esc close</small>
+          </aside>
         </div>
 
         <footer className="viewer-footer">

@@ -5,10 +5,63 @@ from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Query, status
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import create_engine
 
 from .catalog import Catalog
+
+WorkflowState = Literal["inbox", "candidate", "reviewed", "selected", "archived"]
+ChannelItemStatus = Literal["candidate", "reviewed", "selected", "used", "rejected"]
+
+
+class EditorialPatch(BaseModel):
+    rating: int | None = Field(default=None, ge=1, le=5)
+    favorite: bool | None = None
+    workflow_state: WorkflowState | None = None
+    notes: str | None = Field(default=None, max_length=20_000)
+    tags: list[str] | None = Field(default=None, max_length=50)
+
+    @field_validator("tags")
+    @classmethod
+    def validate_tags(cls, tags: list[str] | None) -> list[str] | None:
+        if tags is not None and any(len(tag.strip()) > 120 for tag in tags):
+            raise ValueError("Tags must be 120 characters or fewer")
+        return tags
+
+
+class CuratedChannelCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    description: str = Field(default="", max_length=20_000)
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, name: str) -> str:
+        if not name.strip():
+            raise ValueError("Channel name cannot be blank")
+        return name
+
+
+class CuratedChannelPatch(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    description: str | None = Field(default=None, max_length=20_000)
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, name: str | None) -> str | None:
+        if name is not None and not name.strip():
+            raise ValueError("Channel name cannot be blank")
+        return name
+
+
+class CuratedChannelItemCreate(BaseModel):
+    asset_id: str = Field(min_length=1, max_length=36)
+    status: ChannelItemStatus = "candidate"
+
+
+class CuratedChannelItemPatch(BaseModel):
+    position: int | None = Field(default=None, ge=0)
+    status: ChannelItemStatus | None = None
 
 
 def create_app(
@@ -49,13 +102,121 @@ def create_app(
     def list_assets(
         media_type: Literal["video", "audio", "image"] | None = None,
         q: str | None = None,
+        favorite: bool | None = None,
+        workflow_state: WorkflowState | None = None,
+        tag: str | None = Query(default=None, max_length=120),
         limit: int = Query(default=50, ge=1, le=200),
         offset: int = Query(default=0, ge=0),
     ) -> dict[str, Any]:
         items, total = catalog.list_assets(
-            media_type=media_type, query=q, limit=limit, offset=offset
+            media_type=media_type,
+            query=q,
+            favorite=favorite,
+            workflow_state=workflow_state,
+            tag=tag,
+            limit=limit,
+            offset=offset,
         )
         return {"items": items, "total": total, "limit": limit, "offset": offset}
+
+    @app.get("/api/assets/{asset_id}/editorial")
+    def get_asset_editorial(asset_id: str) -> dict[str, Any]:
+        editorial = catalog.get_editorial(asset_id)
+        if editorial is None:
+            raise HTTPException(status_code=404, detail="Asset not found")
+        return editorial
+
+    @app.patch("/api/assets/{asset_id}/editorial")
+    def update_asset_editorial(
+        asset_id: str, payload: EditorialPatch
+    ) -> dict[str, Any]:
+        editorial = catalog.update_editorial(
+            asset_id, payload.model_dump(exclude_unset=True)
+        )
+        if editorial is None:
+            raise HTTPException(status_code=404, detail="Asset not found")
+        return editorial
+
+    @app.get("/api/curated-channels")
+    def list_curated_channels() -> dict[str, Any]:
+        items = catalog.list_curated_channels()
+        return {"items": items, "total": len(items)}
+
+    @app.post("/api/curated-channels", status_code=status.HTTP_201_CREATED)
+    def create_curated_channel(payload: CuratedChannelCreate) -> dict[str, Any]:
+        return catalog.create_curated_channel(payload.name, payload.description)
+
+    @app.get("/api/curated-channels/{channel_id}")
+    def get_curated_channel(channel_id: str) -> dict[str, Any]:
+        channel = catalog.get_curated_channel(channel_id)
+        if channel is None:
+            raise HTTPException(status_code=404, detail="Curated channel not found")
+        return channel
+
+    @app.patch("/api/curated-channels/{channel_id}")
+    def update_curated_channel(
+        channel_id: str, payload: CuratedChannelPatch
+    ) -> dict[str, Any]:
+        channel = catalog.update_curated_channel(
+            channel_id, payload.model_dump(exclude_unset=True)
+        )
+        if channel is None:
+            raise HTTPException(status_code=404, detail="Curated channel not found")
+        return channel
+
+    @app.delete(
+        "/api/curated-channels/{channel_id}", status_code=status.HTTP_204_NO_CONTENT
+    )
+    def delete_curated_channel(channel_id: str) -> Response:
+        if not catalog.delete_curated_channel(channel_id):
+            raise HTTPException(status_code=404, detail="Curated channel not found")
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    @app.get("/api/curated-channels/{channel_id}/items")
+    def list_curated_channel_items(channel_id: str) -> dict[str, Any]:
+        items, total = catalog.list_curated_channel_items(channel_id)
+        if items is None:
+            raise HTTPException(status_code=404, detail="Curated channel not found")
+        return {"items": items, "total": total}
+
+    @app.post(
+        "/api/curated-channels/{channel_id}/items",
+        status_code=status.HTTP_201_CREATED,
+    )
+    def add_curated_channel_item(
+        channel_id: str, payload: CuratedChannelItemCreate
+    ) -> dict[str, Any]:
+        item, error = catalog.add_curated_channel_item(
+            channel_id, payload.asset_id, payload.status
+        )
+        if error == "not_found":
+            raise HTTPException(status_code=404, detail="Channel or asset not found")
+        if error == "conflict":
+            raise HTTPException(
+                status_code=409, detail="Asset is already in this curated channel"
+            )
+        assert item is not None
+        return item
+
+    @app.patch("/api/curated-channels/{channel_id}/items/{asset_id}")
+    def update_curated_channel_item(
+        channel_id: str, asset_id: str, payload: CuratedChannelItemPatch
+    ) -> dict[str, Any]:
+        item = catalog.update_curated_channel_item(
+            channel_id, asset_id, payload.model_dump(exclude_unset=True)
+        )
+        if item is None:
+            raise HTTPException(status_code=404, detail="Curated channel item not found")
+        return item
+
+    @app.delete(
+        "/api/curated-channels/{channel_id}/items/{asset_id}",
+        status_code=status.HTTP_204_NO_CONTENT,
+    )
+    def delete_curated_channel_item(channel_id: str, asset_id: str) -> Response:
+        if not catalog.delete_curated_channel_item(channel_id, asset_id):
+            raise HTTPException(status_code=404, detail="Curated channel item not found")
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     @app.get("/api/channels")
     def list_channels(
@@ -71,6 +232,9 @@ def create_app(
         channel_id: str,
         media_type: Literal["video", "audio"] | None = None,
         q: str | None = None,
+        favorite: bool | None = None,
+        workflow_state: WorkflowState | None = None,
+        tag: str | None = Query(default=None, max_length=120),
         limit: int = Query(default=50, ge=1, le=200),
         offset: int = Query(default=0, ge=0),
     ) -> dict[str, Any]:
@@ -78,6 +242,9 @@ def create_app(
             media_type=media_type,
             query=q,
             channel_id=channel_id,
+            favorite=favorite,
+            workflow_state=workflow_state,
+            tag=tag,
             limit=limit,
             offset=offset,
         )

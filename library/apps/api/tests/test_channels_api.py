@@ -77,5 +77,17 @@ def test_source_channels_group_assets_with_names_artwork_and_counts(
             "video-b",
         }
 
+        favorite_id = assets.json()["items"][0]["id"]
+        client.patch(
+            f"/api/assets/{favorite_id}/editorial",
+            json={"favorite": True, "tags": ["featured"]},
+        )
+        filtered_assets = client.get(
+            "/api/channels/UC-one/assets",
+            params={"media_type": "video", "favorite": True, "tag": "featured"},
+        )
+        assert filtered_assets.json()["total"] == 1
+        assert filtered_assets.json()["items"][0]["id"] == favorite_id
+
         search = client.get("/api/channels?q=second")
         assert [channel["id"] for channel in search.json()["items"]] == ["UC-two"]

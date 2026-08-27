@@ -151,6 +151,31 @@ describe("Hoarder Library navigation", () => {
     );
   });
 
+  it("filters the catalog by workflow, favorites, and normalized tag", async () => {
+    const fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ items: [], total: 0, limit: 50, offset: 0 }),
+    });
+    vi.stubGlobal("fetch", fetch);
+    render(<App apiBase="http://catalog.test" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Videos" }));
+    fireEvent.change(await screen.findByLabelText("Workflow filter"), {
+      target: { value: "candidate" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Favorites only" }));
+    fireEvent.change(screen.getByLabelText("Tag filter"), {
+      target: { value: "History" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Apply filters" }));
+
+    await waitFor(() => {
+      expect(fetch).toHaveBeenLastCalledWith(
+        "http://catalog.test/api/assets?media_type=video&limit=50&offset=0&favorite=true&workflow_state=candidate&tag=History",
+      );
+    });
+  });
+
   it("browses source channels and opens a channel-filtered video catalog", async () => {
     const fetch = vi.fn((input: string | URL | Request) => {
       const url = String(input);
@@ -219,6 +244,113 @@ describe("Hoarder Library navigation", () => {
       "http://catalog.test/api/channels/UC-one/assets?media_type=video&limit=50&offset=0",
     );
     expect(screen.getByRole("button", { name: "All source channels" })).toBeInTheDocument();
+  });
+
+  it("creates, opens, reorders, and updates a curated channel", async () => {
+    let reordered = false;
+    const fetch = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/api/curated-channels") && init?.method === "POST") {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            id: "channel-2",
+            name: "New Channel",
+            description: "Fresh collection",
+            item_count: 0,
+          }),
+        });
+      }
+      if (url.endsWith("/api/curated-channels")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            items: [
+              {
+                id: "channel-1",
+                name: "Museum Television",
+                description: "Always-on museum material",
+                item_count: 2,
+              },
+            ],
+            total: 1,
+          }),
+        });
+      }
+      if (url.endsWith("/api/curated-channels/channel-1/items") && !init) {
+        const items = [
+          {
+            asset_id: reordered ? "video-2" : "video-1",
+            position: 0,
+            status: "candidate",
+            asset: {
+              id: reordered ? "video-2" : "video-1",
+              title: reordered ? "Second Film" : "First Film",
+              media_type: "video",
+              status: "available",
+              files: [],
+            },
+          },
+          {
+            asset_id: reordered ? "video-1" : "video-2",
+            position: 1,
+            status: "reviewed",
+            asset: {
+              id: reordered ? "video-1" : "video-2",
+              title: reordered ? "First Film" : "Second Film",
+              media_type: "video",
+              status: "available",
+              files: [],
+            },
+          },
+        ];
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ items, total: 2 }),
+        });
+      }
+      if (url.includes("/items/video-2") && init?.method === "PATCH") {
+        reordered = true;
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ position: 0, status: "reviewed" }),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({ items: [], total: 0 }),
+      });
+    });
+    vi.stubGlobal("fetch", fetch);
+    render(<App apiBase="http://catalog.test" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Curated Channels" }));
+    fireEvent.change(await screen.findByLabelText("Channel name"), {
+      target: { value: "New Channel" },
+    });
+    fireEvent.change(screen.getByLabelText("Channel description"), {
+      target: { value: "Fresh collection" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create channel" }));
+
+    expect(await screen.findByText("New Channel")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Open Museum Television" }));
+    expect(await screen.findByText("First Film")).toBeInTheDocument();
+    expect(screen.getByText("Second Film")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Move Second Film up" }));
+
+    await waitFor(() => {
+      expect(fetch).toHaveBeenCalledWith(
+        "http://catalog.test/api/curated-channels/channel-1/items/video-2",
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ position: 0 }),
+        },
+      );
+    });
+    expect(await screen.findByText("Order saved")).toBeInTheDocument();
   });
 
   it("shows storage scan progress in the Jobs lens", async () => {

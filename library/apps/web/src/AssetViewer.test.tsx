@@ -1,9 +1,12 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { AssetViewer, type Asset } from "./AssetViewer";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 const video: Asset = {
   id: "video-1",
@@ -51,5 +54,99 @@ describe("AssetViewer", () => {
       "src",
       "/api/assets/image-1/stream",
     );
+  });
+
+  it("edits evaluation metadata and assigns the asset to a curated channel", async () => {
+    const fetch = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/api/assets/video-1/editorial") && init?.method === "PATCH") {
+        return Promise.resolve({
+          ok: true,
+          json: async () => JSON.parse(String(init.body)),
+        });
+      }
+      if (url.endsWith("/api/assets/video-1/editorial")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            asset_id: "video-1",
+            rating: 2,
+            favorite: false,
+            workflow_state: "inbox",
+            notes: "",
+            tags: [],
+          }),
+        });
+      }
+      if (url.endsWith("/api/curated-channels")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            items: [
+              {
+                id: "channel-1",
+                name: "Museum Television",
+                description: "",
+                item_count: 0,
+              },
+            ],
+            total: 1,
+          }),
+        });
+      }
+      if (url.endsWith("/api/curated-channels/channel-1/items")) {
+        return Promise.resolve({ ok: true, json: async () => ({}) });
+      }
+      return Promise.resolve({ ok: false, status: 404, json: async () => ({}) });
+    });
+    vi.stubGlobal("fetch", fetch);
+    render(<AssetViewer apiBase="http://catalog.test" asset={video} onClose={() => {}} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "4 stars" }));
+    fireEvent.click(screen.getByRole("button", { name: "Favorite" }));
+    fireEvent.change(screen.getByLabelText("Workflow state"), {
+      target: { value: "reviewed" },
+    });
+    fireEvent.change(screen.getByLabelText("Notes"), {
+      target: { value: "Keep for a history channel." },
+    });
+    fireEvent.change(screen.getByLabelText("Tags"), {
+      target: { value: "history, museum" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save evaluation" }));
+
+    await waitFor(() => {
+      expect(fetch).toHaveBeenCalledWith(
+        "http://catalog.test/api/assets/video-1/editorial",
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            rating: 4,
+            favorite: true,
+            workflow_state: "reviewed",
+            notes: "Keep for a history channel.",
+            tags: ["history", "museum"],
+          }),
+        },
+      );
+    });
+
+    fireEvent.change(screen.getByLabelText("Curated channel"), {
+      target: { value: "channel-1" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add to channel" }));
+
+    await waitFor(() => {
+      expect(fetch).toHaveBeenCalledWith(
+        "http://catalog.test/api/curated-channels/channel-1/items",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ asset_id: "video-1", status: "candidate" }),
+        },
+      );
+    });
+    expect(await screen.findByText("Added to Museum Television")).toBeInTheDocument();
   });
 });

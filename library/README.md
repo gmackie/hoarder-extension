@@ -16,6 +16,8 @@ This first vertical slice includes:
 - One catalog asset for duplicate copies across multiple roots.
 - Search, media-type filtering, pagination, and HTTP Range streaming.
 - Source-channel discovery, local channel artwork, and channel-filtered catalogs.
+- Durable ratings, favorites, workflow state, notes, and normalized tags.
+- Ordered curated channels with per-channel candidate/review/selection status.
 - Durable scan-job history.
 - A responsive PWA with Inbox, Videos, Music, Images, Source Channels,
   Curated Channels, and Jobs navigation.
@@ -143,6 +145,39 @@ back to the directory identifier and a generated initial. The corresponding
 resource endpoints are `GET /api/channels`,
 `GET /api/channels/{channel_id}/assets`, and
 `GET /api/channels/{channel_id}/thumbnail`.
+
+## Evaluate and curate assets
+
+Open any asset in the library to review it alongside playback. Ratings use a
+one-to-five scale; favorites, notes, tags, and workflow state are optional.
+The keyboard shortcuts `1`–`5` set a rating, `F` toggles favorite, and `Esc`
+closes the viewer when focus is not inside a form field.
+
+Editorial metadata is stored against the stable asset ID rather than a file
+path, so rescans and reconciled file moves do not overwrite it. Tags are
+trimmed, case-folded, deduplicated, and shared across media types. Catalog and
+source-channel queries accept `favorite`, `workflow_state`, and `tag` filters:
+
+```text
+GET /api/assets?media_type=video&favorite=true&workflow_state=reviewed&tag=history
+GET /api/channels/{channel_id}/assets?favorite=true&tag=featured
+GET /api/assets/{asset_id}/editorial
+PATCH /api/assets/{asset_id}/editorial
+```
+
+Curated channels are user-owned, ordered collections. Adding an asset creates
+only a catalog membership; it never copies or moves the media file. Each
+membership has its own `candidate`, `reviewed`, `selected`, `used`, or
+`rejected` state, and reordering normalizes every position in one transaction.
+The PWA supports creation, editing, deletion, assignment from the asset viewer,
+status changes, removal, and up/down ordering through these resources:
+
+```text
+GET|POST /api/curated-channels
+GET|PATCH|DELETE /api/curated-channels/{channel_id}
+GET|POST /api/curated-channels/{channel_id}/items
+PATCH|DELETE /api/curated-channels/{channel_id}/items/{asset_id}
+```
 
 ## Run on a NAS over Tailscale
 

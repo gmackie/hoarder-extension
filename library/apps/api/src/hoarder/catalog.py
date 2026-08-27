@@ -4,11 +4,21 @@ from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import Engine, func, select
+from sqlalchemy import Engine, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from .fingerprints import fingerprint_media
-from .models import Asset, AssetFile, Base, Job, StorageRoot
+from .models import (
+    Asset,
+    AssetEditorial,
+    AssetFile,
+    Base,
+    CuratedChannel,
+    CuratedChannelItem,
+    Job,
+    StorageRoot,
+    Tag,
+)
 
 MEDIA_TYPES = {
     ".avi": "video",
@@ -260,6 +270,9 @@ class Catalog:
         media_type: str | None = None,
         query: str | None = None,
         channel_id: str | None = None,
+        favorite: bool | None = None,
+        workflow_state: str | None = None,
+        tag: str | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> tuple[list[dict[str, Any]], int]:
@@ -267,12 +280,42 @@ class Catalog:
             statement = (
                 select(Asset)
                 .where(Asset.status != "excluded")
-                .options(selectinload(Asset.files).selectinload(AssetFile.root))
+                .options(
+                    selectinload(Asset.files).selectinload(AssetFile.root),
+                    selectinload(Asset.editorial),
+                    selectinload(Asset.tags),
+                )
             )
             if media_type is not None:
                 statement = statement.where(Asset.media_type == media_type)
             if query:
                 statement = statement.where(Asset.title.ilike(f"%{query}%"))
+            if favorite is not None or workflow_state is not None:
+                statement = statement.outerjoin(AssetEditorial)
+            if favorite is True:
+                statement = statement.where(AssetEditorial.favorite.is_(True))
+            elif favorite is False:
+                statement = statement.where(
+                    or_(
+                        AssetEditorial.asset_id.is_(None),
+                        AssetEditorial.favorite.is_(False),
+                    )
+                )
+            if workflow_state == "inbox":
+                statement = statement.where(
+                    or_(
+                        AssetEditorial.asset_id.is_(None),
+                        AssetEditorial.workflow_state == "inbox",
+                    )
+                )
+            elif workflow_state is not None:
+                statement = statement.where(
+                    AssetEditorial.workflow_state == workflow_state
+                )
+            if tag:
+                statement = statement.join(Asset.tags).where(
+                    Tag.name == self._normalize_tag(tag)
+                )
             ordered_statement = statement.order_by(Asset.created_at.desc())
             if channel_id is None:
                 total = session.scalar(
@@ -291,29 +334,269 @@ class Catalog:
                 ]
                 total = len(matching_assets)
                 assets = matching_assets[offset : offset + limit]
-            items = [
-                {
-                    "id": asset.id,
-                    "title": asset.title,
-                    "media_type": asset.media_type,
-                    "status": asset.status,
-                    "thumbnail_url": (
-                        f"/api/assets/{asset.id}/thumbnail"
-                        if self._resolve_thumbnail_from_files(asset.files) is not None
-                        else None
-                    ),
-                    "files": [
-                        {
-                            "id": file.id,
-                            "relative_path": file.relative_path,
-                            "size": file.size,
-                        }
-                        for file in asset.files
-                    ],
-                }
-                for asset in assets
-            ]
+            items = [self._serialize_asset(asset) for asset in assets]
             return items, int(total or 0)
+
+    def _serialize_asset(self, asset: Asset) -> dict[str, Any]:
+        return {
+            "id": asset.id,
+            "title": asset.title,
+            "media_type": asset.media_type,
+            "status": asset.status,
+            "thumbnail_url": (
+                f"/api/assets/{asset.id}/thumbnail"
+                if self._resolve_thumbnail_from_files(asset.files) is not None
+                else None
+            ),
+            "editorial": self._serialize_editorial(asset),
+            "files": [
+                {
+                    "id": asset_file.id,
+                    "relative_path": asset_file.relative_path,
+                    "size": asset_file.size,
+                }
+                for asset_file in asset.files
+            ],
+        }
+
+    def get_editorial(self, asset_id: str) -> dict[str, Any] | None:
+        with Session(self.engine) as session:
+            asset = session.scalar(
+                select(Asset)
+                .where(Asset.id == asset_id)
+                .options(selectinload(Asset.editorial), selectinload(Asset.tags))
+            )
+            return self._serialize_editorial(asset) if asset is not None else None
+
+    def update_editorial(
+        self, asset_id: str, updates: Mapping[str, Any]
+    ) -> dict[str, Any] | None:
+        with Session(self.engine) as session:
+            asset = session.scalar(
+                select(Asset)
+                .where(Asset.id == asset_id)
+                .options(selectinload(Asset.editorial), selectinload(Asset.tags))
+            )
+            if asset is None:
+                return None
+            if asset.editorial is None:
+                asset.editorial = AssetEditorial()
+            for field in ("rating", "favorite", "workflow_state", "notes"):
+                if field in updates:
+                    value = updates[field]
+                    if field == "notes" and value is None:
+                        value = ""
+                    setattr(asset.editorial, field, value)
+            if "tags" in updates:
+                normalized_names = sorted(
+                    {
+                        normalized
+                        for value in updates["tags"]
+                        if (normalized := self._normalize_tag(value))
+                    }
+                )
+                tags_by_name = {
+                    tag.name: tag
+                    for tag in session.scalars(
+                        select(Tag).where(Tag.name.in_(normalized_names))
+                    ).all()
+                }
+                asset.tags = [
+                    tags_by_name.get(name) or Tag(name=name)
+                    for name in normalized_names
+                ]
+            session.commit()
+            return self._serialize_editorial(asset)
+
+    def _serialize_editorial(self, asset: Asset) -> dict[str, Any]:
+        editorial = asset.editorial
+        return {
+            "asset_id": asset.id,
+            "rating": editorial.rating if editorial is not None else None,
+            "favorite": editorial.favorite if editorial is not None else False,
+            "workflow_state": (
+                editorial.workflow_state if editorial is not None else "inbox"
+            ),
+            "notes": editorial.notes if editorial is not None else "",
+            "tags": sorted(tag.name for tag in asset.tags),
+        }
+
+    @staticmethod
+    def _normalize_tag(value: str) -> str:
+        return " ".join(value.strip().casefold().split())[:120]
+
+    def list_curated_channels(self) -> list[dict[str, Any]]:
+        with Session(self.engine) as session:
+            channels = session.scalars(
+                select(CuratedChannel)
+                .options(selectinload(CuratedChannel.items))
+                .order_by(CuratedChannel.name)
+            ).all()
+            return [self._serialize_curated_channel(channel) for channel in channels]
+
+    def get_curated_channel(self, channel_id: str) -> dict[str, Any] | None:
+        with Session(self.engine) as session:
+            channel = session.scalar(
+                select(CuratedChannel)
+                .where(CuratedChannel.id == channel_id)
+                .options(selectinload(CuratedChannel.items))
+            )
+            return (
+                self._serialize_curated_channel(channel)
+                if channel is not None
+                else None
+            )
+
+    def create_curated_channel(
+        self, name: str, description: str = ""
+    ) -> dict[str, Any]:
+        with Session(self.engine) as session:
+            channel = CuratedChannel(name=name.strip(), description=description.strip())
+            session.add(channel)
+            session.commit()
+            return self._serialize_curated_channel(channel)
+
+    def update_curated_channel(
+        self, channel_id: str, updates: Mapping[str, Any]
+    ) -> dict[str, Any] | None:
+        with Session(self.engine) as session:
+            channel = session.scalar(
+                select(CuratedChannel)
+                .where(CuratedChannel.id == channel_id)
+                .options(selectinload(CuratedChannel.items))
+            )
+            if channel is None:
+                return None
+            if "name" in updates:
+                channel.name = str(updates["name"]).strip()
+            if "description" in updates:
+                channel.description = str(updates["description"] or "").strip()
+            session.commit()
+            return self._serialize_curated_channel(channel)
+
+    def delete_curated_channel(self, channel_id: str) -> bool:
+        with Session(self.engine) as session:
+            channel = session.get(CuratedChannel, channel_id)
+            if channel is None:
+                return False
+            session.delete(channel)
+            session.commit()
+            return True
+
+    @staticmethod
+    def _serialize_curated_channel(channel: CuratedChannel) -> dict[str, Any]:
+        return {
+            "id": channel.id,
+            "name": channel.name,
+            "description": channel.description,
+            "item_count": len(channel.items),
+            "created_at": channel.created_at.isoformat(),
+        }
+
+    def add_curated_channel_item(
+        self, channel_id: str, asset_id: str, item_status: str
+    ) -> tuple[dict[str, Any] | None, str | None]:
+        with Session(self.engine) as session:
+            channel = session.get(CuratedChannel, channel_id)
+            asset = session.scalar(
+                select(Asset)
+                .where(Asset.id == asset_id)
+                .options(
+                    selectinload(Asset.files).selectinload(AssetFile.root),
+                    selectinload(Asset.editorial),
+                    selectinload(Asset.tags),
+                )
+            )
+            if channel is None or asset is None:
+                return None, "not_found"
+            existing = session.scalar(
+                select(CuratedChannelItem).where(
+                    CuratedChannelItem.channel_id == channel_id,
+                    CuratedChannelItem.asset_id == asset_id,
+                )
+            )
+            if existing is not None:
+                return None, "conflict"
+            last_position = session.scalar(
+                select(func.max(CuratedChannelItem.position)).where(
+                    CuratedChannelItem.channel_id == channel_id
+                )
+            )
+            item = CuratedChannelItem(
+                channel=channel,
+                asset=asset,
+                position=int(last_position if last_position is not None else -1) + 1,
+                status=item_status,
+            )
+            session.add(item)
+            session.commit()
+            return self._serialize_curated_item(item), None
+
+    def list_curated_channel_items(
+        self, channel_id: str
+    ) -> tuple[list[dict[str, Any]] | None, int]:
+        with Session(self.engine) as session:
+            if session.get(CuratedChannel, channel_id) is None:
+                return None, 0
+            items = session.scalars(self._curated_item_statement(channel_id)).all()
+            return [self._serialize_curated_item(item) for item in items], len(items)
+
+    def update_curated_channel_item(
+        self, channel_id: str, asset_id: str, updates: Mapping[str, Any]
+    ) -> dict[str, Any] | None:
+        with Session(self.engine) as session:
+            items = session.scalars(self._curated_item_statement(channel_id)).all()
+            item = next((item for item in items if item.asset_id == asset_id), None)
+            if item is None:
+                return None
+            if "status" in updates:
+                item.status = str(updates["status"])
+            if "position" in updates:
+                items.remove(item)
+                requested = min(int(updates["position"]), len(items))
+                items.insert(requested, item)
+                for position, ordered_item in enumerate(items):
+                    ordered_item.position = position
+            session.commit()
+            return self._serialize_curated_item(item)
+
+    def delete_curated_channel_item(self, channel_id: str, asset_id: str) -> bool:
+        with Session(self.engine) as session:
+            items = session.scalars(self._curated_item_statement(channel_id)).all()
+            item = next((item for item in items if item.asset_id == asset_id), None)
+            if item is None:
+                return False
+            session.delete(item)
+            remaining = [candidate for candidate in items if candidate is not item]
+            for position, ordered_item in enumerate(remaining):
+                ordered_item.position = position
+            session.commit()
+            return True
+
+    @staticmethod
+    def _curated_item_statement(channel_id: str):
+        return (
+            select(CuratedChannelItem)
+            .where(CuratedChannelItem.channel_id == channel_id)
+            .options(
+                selectinload(CuratedChannelItem.asset)
+                .selectinload(Asset.files)
+                .selectinload(AssetFile.root),
+                selectinload(CuratedChannelItem.asset).selectinload(Asset.editorial),
+                selectinload(CuratedChannelItem.asset).selectinload(Asset.tags),
+            )
+            .order_by(CuratedChannelItem.position)
+        )
+
+    def _serialize_curated_item(
+        self, item: CuratedChannelItem
+    ) -> dict[str, Any]:
+        return {
+            "asset_id": item.asset_id,
+            "position": item.position,
+            "status": item.status,
+            "asset": self._serialize_asset(item.asset),
+        }
 
     def list_channels(
         self,
