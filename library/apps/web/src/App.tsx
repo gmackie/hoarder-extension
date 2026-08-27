@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
+import { AssetViewer, type Asset } from "./AssetViewer";
+
 export type AppProps = {
   apiBase: string;
 };
@@ -15,14 +17,6 @@ const lenses = [
 ] as const;
 
 type Lens = (typeof lenses)[number];
-
-type Asset = {
-  id: string;
-  title: string;
-  media_type: "video" | "audio" | "image";
-  status: string;
-  files: Array<{ id: number; relative_path: string; size: number }>;
-};
 
 type Job = {
   id: string;
@@ -45,6 +39,7 @@ export function App({ apiBase }: AppProps) {
   const [error, setError] = useState<string | null>(null);
   const [scanStatus, setScanStatus] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
+  const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
 
   const loadAssets = useCallback(
     async (lens: Lens) => {
@@ -123,7 +118,10 @@ export function App({ apiBase }: AppProps) {
             <button
               aria-current={activeLens === lens ? "page" : undefined}
               key={lens}
-              onClick={() => setActiveLens(lens)}
+              onClick={() => {
+                setActiveLens(lens);
+                setSelectedAsset(null);
+              }}
               type="button"
             >
               {lens}
@@ -133,7 +131,10 @@ export function App({ apiBase }: AppProps) {
       </aside>
       <main>
         <header className="page-header">
-          <h1>{activeLens}</h1>
+          <div>
+            <span>Media catalog</span>
+            <h1>{activeLens}</h1>
+          </div>
           <button disabled={scanning} onClick={scanStorage} type="button">
             {scanning ? "Scanning…" : "Scan storage"}
           </button>
@@ -143,13 +144,39 @@ export function App({ apiBase }: AppProps) {
         {activeLens === "Inbox" || mediaTypes[activeLens] ? (
           <section aria-label={`${activeLens} catalog`} className="asset-grid">
             {assets.map((asset) => (
-              <article key={asset.id}>
-                <span>{asset.media_type}</span>
-                <h2>{asset.title}</h2>
-                <p>{asset.files[0]?.relative_path}</p>
-                <a href={`${apiBase}/api/assets/${asset.id}/stream`}>Open</a>
-              </article>
+              <button
+                aria-label={`View ${asset.title}`}
+                className="asset-card"
+                key={asset.id}
+                onClick={() => setSelectedAsset(asset)}
+                type="button"
+              >
+                <span className={`asset-preview asset-preview-${asset.media_type}`}>
+                  {asset.media_type === "image" ? (
+                    <img
+                      alt=""
+                      loading="lazy"
+                      src={`${apiBase}/api/assets/${asset.id}/stream`}
+                    />
+                  ) : (
+                    <span aria-hidden="true" className="media-glyph">
+                      {asset.media_type === "video" ? "▶" : "♪"}
+                    </span>
+                  )}
+                  <span className="media-type">{asset.media_type}</span>
+                </span>
+                <span className="asset-card-copy">
+                  <strong>{asset.title}</strong>
+                  <span>{asset.files[0]?.relative_path}</span>
+                </span>
+              </button>
             ))}
+            {assets.length === 0 ? (
+              <div className="empty-state">
+                <strong>No media here yet</strong>
+                <span>Scan storage or choose another library section.</span>
+              </div>
+            ) : null}
           </section>
         ) : null}
         {activeLens === "Jobs" ? (
@@ -164,6 +191,13 @@ export function App({ apiBase }: AppProps) {
           </section>
         ) : null}
       </main>
+      {selectedAsset ? (
+        <AssetViewer
+          apiBase={apiBase}
+          asset={selectedAsset}
+          onClose={() => setSelectedAsset(null)}
+        />
+      ) : null}
     </div>
   );
 }
