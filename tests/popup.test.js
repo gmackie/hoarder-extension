@@ -74,6 +74,28 @@ describe("portable target editor", () => {
     expect(html).toContain("Open dashboard / queue");
   });
 
+  it("shows a live, accessible queue monitor in the popup", async () => {
+    const html = await readFile(popupPath, "utf8");
+
+    expect(html).toContain(
+      '<section id="queue-section" aria-labelledby="queue-heading">',
+    );
+    expect(html).toContain('<h2 id="queue-heading">Queue</h2>');
+    expect(html).toContain(
+      'id="queue-summary" role="status" aria-live="polite"',
+    );
+    expect(html).toContain('id="queue-list"');
+  });
+
+  it("refreshes the selected target queue while the popup is open", async () => {
+    const script = await readFile(popupScriptPath, "utf8");
+
+    expect(script).toContain('fetch(`${target.metubeUrl}/history`)');
+    expect(script).toContain("normalizeQueueHistory(history");
+    expect(script).toContain("void refreshQueue();");
+    expect(script).toContain("window.setInterval(refreshQueue, 2000)");
+  });
+
   it("renders a dynamic destination selector and target settings", async () => {
     const html = await readFile(popupPath, "utf8");
 

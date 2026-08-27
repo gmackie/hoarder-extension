@@ -12,6 +12,7 @@ switch the active target at any time.
 
 - Optional automatic saving of detected video pages and direct media URLs.
 - Toolbar icons show when a submission is pending, accepted, or failed.
+- The popup monitors active downloads and the five newest results for the selected target.
 - A popup link opens the active target's download queue or dashboard.
 - Optional checksummed automatic updates on macOS.
 - Multiple named archive targets with independent service URLs and folders.
@@ -31,9 +32,9 @@ checksummed release in a stable per-user directory:
 
 ```sh
 curl -fsSLo install-hoarder.sh \
-  https://raw.githubusercontent.com/gmackie/hoarder-extension/v1.0.10/scripts/install-macos.sh
+  https://raw.githubusercontent.com/gmackie/hoarder-extension/v1.0.11/scripts/install-macos.sh
 sh install-hoarder.sh \
-  --version 1.0.10 \
+  --version 1.0.11 \
   --enable-auto-update
 ```
 
@@ -72,7 +73,7 @@ The updater is configurable for other users and forks:
 
 ```sh
 sh install-hoarder.sh \
-  --version 1.0.10 \
+  --version 1.0.11 \
   --enable-auto-update \
   --repository owner/hoarder-extension \
   --release-base-url https://github.com/owner/hoarder-extension/releases/download \

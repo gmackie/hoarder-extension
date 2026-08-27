@@ -39,7 +39,7 @@ h1 {
   outline-offset: 2px;
 }
 
-#status-section, #manual-section, #settings-section {
+#status-section, #manual-section, #queue-section, #settings-section {
   margin-bottom: 12px;
 }
 
@@ -98,6 +98,88 @@ button.primary:disabled {
   min-height: 1em;
   color: #666;
   font-size: 12px;
+}
+
+#queue-section {
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.queue-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  background: #f6f6f6;
+  border-bottom: 1px solid #ddd;
+}
+
+.queue-header h2 {
+  font-size: 14px;
+}
+
+#queue-summary {
+  color: #666;
+  font-size: 11px;
+}
+
+#queue-list {
+  max-height: 210px;
+  overflow-y: auto;
+}
+
+.queue-empty {
+  padding: 12px 10px;
+  color: #666;
+  font-size: 12px;
+  text-align: center;
+}
+
+.queue-item {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 7px;
+  padding: 7px 10px;
+  border-bottom: 1px solid #eee;
+}
+
+.queue-item:last-child {
+  border-bottom: 0;
+}
+
+.queue-icon {
+  color: #1769aa;
+  font-weight: 700;
+  text-align: center;
+}
+
+.queue-item.failed .queue-icon {
+  color: #c62828;
+}
+
+.queue-item.saved .queue-icon {
+  color: #2e7d32;
+}
+
+.queue-title,
+.queue-detail {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.queue-title {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.queue-detail {
+  margin-top: 2px;
+  color: #666;
+  font-size: 11px;
 }
 
 #open-dashboard {
