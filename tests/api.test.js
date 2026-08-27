@@ -108,6 +108,28 @@ describe("isDuplicateDownload", () => {
       ),
     ).toBe(true);
   });
+
+  it("allows a failed download to be retried", () => {
+    const failedHistory = {
+      done: [
+        {
+          url: "https://www.youtube.com/watch?v=retry-me",
+          folder: "",
+          status: "error",
+        },
+      ],
+      queue: [],
+      pending: [],
+    };
+
+    expect(
+      isDuplicateDownload(
+        failedHistory,
+        "https://www.youtube.com/watch?v=retry-me",
+        "",
+      ),
+    ).toBe(false);
+  });
 });
 
 describe("checkTargetAvailability", () => {

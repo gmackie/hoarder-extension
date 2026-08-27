@@ -224,6 +224,7 @@ export function isDuplicateDownload(history, url, folder = "") {
   ];
   return allItems.some(
     (item) =>
+      item.status !== "error" &&
       canonicalizeUrl(item.url) === cleanUrl &&
       (item.folder || "") === (folder || ""),
   );
