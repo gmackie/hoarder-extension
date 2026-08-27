@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
@@ -53,6 +53,12 @@ describe("Hoarder Library navigation", () => {
     expect(fetch).toHaveBeenCalledWith(
       "http://catalog.test/api/assets?media_type=video&limit=50&offset=0",
     );
+    await waitFor(() => {
+      expect(document.querySelector(".asset-preview video")).toHaveAttribute(
+        "src",
+        "http://catalog.test/api/assets/asset-1/stream#t=0.1",
+      );
+    });
   });
 
   it("uses associated video artwork without listing it as an image asset", async () => {

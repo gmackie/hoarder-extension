@@ -1,4 +1,4 @@
-import { type FormEvent, useCallback, useEffect, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
 import { AssetViewer, type Asset } from "./AssetViewer";
 
@@ -233,30 +233,7 @@ export function App({ apiBase }: AppProps) {
                 onClick={() => setSelectedAsset(asset)}
                 type="button"
               >
-                <span className={`asset-preview asset-preview-${asset.media_type}`}>
-                  {asset.media_type === "image" ? (
-                    <img
-                      alt=""
-                      loading="lazy"
-                      src={`${apiBase}/api/assets/${asset.id}/stream`}
-                    />
-                  ) : (
-                    <>
-                      <span aria-hidden="true" className="media-glyph">
-                        {asset.media_type === "video" ? "▶" : "♪"}
-                      </span>
-                      {asset.thumbnail_url ? (
-                        <img
-                          alt=""
-                          loading="lazy"
-                          onError={(event) => { event.currentTarget.hidden = true; }}
-                          src={`${apiBase}${asset.thumbnail_url}`}
-                        />
-                      ) : null}
-                    </>
-                  )}
-                  <span className="media-type">{asset.media_type}</span>
-                </span>
+                <AssetPreview apiBase={apiBase} asset={asset} />
                 <span className="asset-card-copy">
                   <strong>{asset.title}</strong>
                   <span>{asset.files[0]?.relative_path}</span>
@@ -296,5 +273,60 @@ export function App({ apiBase }: AppProps) {
         />
       ) : null}
     </div>
+  );
+}
+
+function AssetPreview({ apiBase, asset }: { apiBase: string; asset: Asset }) {
+  const previewRef = useRef<HTMLSpanElement>(null);
+  const [loadVideoFrame, setLoadVideoFrame] = useState(false);
+  const streamUrl = `${apiBase}/api/assets/${asset.id}/stream`;
+
+  useEffect(() => {
+    if (asset.media_type !== "video" || asset.thumbnail_url) return;
+    if (!("IntersectionObserver" in window)) {
+      setLoadVideoFrame(true);
+      return;
+    }
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        setLoadVideoFrame(true);
+        observer.disconnect();
+      }
+    }, { rootMargin: "240px" });
+    if (previewRef.current) observer.observe(previewRef.current);
+    return () => observer.disconnect();
+  }, [asset.media_type, asset.thumbnail_url]);
+
+  return (
+    <span
+      className={`asset-preview asset-preview-${asset.media_type}`}
+      ref={previewRef}
+    >
+      <span aria-hidden="true" className="media-glyph">
+        {asset.media_type === "video" ? "▶" : asset.media_type === "audio" ? "♪" : ""}
+      </span>
+      {asset.media_type === "image" ? (
+        <img alt="" loading="lazy" src={streamUrl} />
+      ) : null}
+      {asset.thumbnail_url ? (
+        <img
+          alt=""
+          loading="lazy"
+          onError={(event) => { event.currentTarget.hidden = true; }}
+          src={`${apiBase}${asset.thumbnail_url}`}
+        />
+      ) : null}
+      {asset.media_type === "video" && !asset.thumbnail_url && loadVideoFrame ? (
+        <video
+          aria-hidden="true"
+          muted
+          onError={(event) => { event.currentTarget.hidden = true; }}
+          playsInline
+          preload="metadata"
+          src={`${streamUrl}#t=0.1`}
+        />
+      ) : null}
+      <span className="media-type">{asset.media_type}</span>
+    </span>
   );
 }
