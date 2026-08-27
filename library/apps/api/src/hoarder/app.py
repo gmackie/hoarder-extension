@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Query, status
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import create_engine
 
 from .catalog import Catalog
@@ -79,6 +79,16 @@ def create_app(
             headers=headers,
             media_type=media_type,
         )
+
+    @app.get("/api/assets/{asset_id}/thumbnail")
+    def asset_thumbnail(asset_id: str):
+        path = catalog.resolve_thumbnail(asset_id)
+        if path is None:
+            raise HTTPException(
+                status_code=404, detail="Asset thumbnail is unavailable"
+            )
+        media_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+        return FileResponse(path, media_type=media_type)
 
     return app
 

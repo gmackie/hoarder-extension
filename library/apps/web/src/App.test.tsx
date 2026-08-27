@@ -55,6 +55,36 @@ describe("Hoarder Library navigation", () => {
     );
   });
 
+  it("uses associated video artwork without listing it as an image asset", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          items: [
+            {
+              id: "video-1",
+              title: "Museum Tour",
+              media_type: "video",
+              status: "available",
+              thumbnail_url: "/api/assets/video-1/thumbnail",
+              files: [{ id: 1, relative_path: "youtube/channel/video-1.mp4", size: 2048 }],
+            },
+          ],
+          total: 1,
+        }),
+      }),
+    );
+
+    render(<App apiBase="http://catalog.test" />);
+
+    expect(await screen.findByText("Museum Tour")).toBeInTheDocument();
+    expect(document.querySelector(".asset-preview img")).toHaveAttribute(
+      "src",
+      "http://catalog.test/api/assets/video-1/thumbnail",
+    );
+  });
+
   it("shows storage scan progress in the Jobs lens", async () => {
     vi.stubGlobal(
       "fetch",

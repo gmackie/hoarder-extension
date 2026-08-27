@@ -159,9 +159,19 @@ export function App({ apiBase }: AppProps) {
                       src={`${apiBase}/api/assets/${asset.id}/stream`}
                     />
                   ) : (
-                    <span aria-hidden="true" className="media-glyph">
-                      {asset.media_type === "video" ? "▶" : "♪"}
-                    </span>
+                    <>
+                      <span aria-hidden="true" className="media-glyph">
+                        {asset.media_type === "video" ? "▶" : "♪"}
+                      </span>
+                      {asset.thumbnail_url ? (
+                        <img
+                          alt=""
+                          loading="lazy"
+                          onError={(event) => { event.currentTarget.hidden = true; }}
+                          src={`${apiBase}${asset.thumbnail_url}`}
+                        />
+                      ) : null}
+                    </>
                   )}
                   <span className="media-type">{asset.media_type}</span>
                 </span>

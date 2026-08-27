@@ -73,9 +73,12 @@ NAS names are compiled into the application. Additional roots can be added
 with a Compose override that supplies another read-only mount and includes it
 in the JSON configuration.
 
-Each root can also define `exclude_patterns` using paths relative to that root.
-Use this for generated downloader caches and derivatives that should not appear
-as library assets:
+Each root can also define `exclude_patterns` and `thumbnail_patterns` using
+paths relative to that root. Use exclusions for generated downloader caches and
+derivatives that should not appear as library assets. Thumbnail patterns let
+the catalog reuse artwork from those caches on matching video or audio assets.
+Patterns support `{stem}`, `{first}` (the lower-case first character of the
+stem), and `{parent}` placeholders:
 
 ```json
 {
@@ -83,13 +86,16 @@ as library assets:
   "label": "Archive",
   "path": "/media/primary",
   "sentinel": ".hoarder-root",
-  "exclude_patterns": ["youtube-cache/**", "temporary/**"]
+  "exclude_patterns": ["youtube-cache/**", "temporary/**"],
+  "thumbnail_patterns": ["youtube-cache/videos/{first}/{stem}.jpg"]
 }
 ```
 
 Exclusions affect catalog metadata only. The scanner never removes or changes
 the underlying files, and previously indexed excluded-only assets disappear
-from normal browsing after the next successful scan.
+from normal browsing after the next successful scan. Matching thumbnail files
+remain available as card artwork and video-player posters without becoming
+standalone entries in the Images lens.
 
 ## Run on a NAS over Tailscale
 

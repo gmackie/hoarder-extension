@@ -5,6 +5,7 @@ export type Asset = {
   title: string;
   media_type: "video" | "audio" | "image";
   status: string;
+  thumbnail_url?: string | null;
   files: Array<{ id: number; relative_path: string; size: number }>;
 };
 
@@ -16,6 +17,9 @@ type AssetViewerProps = {
 
 export function AssetViewer({ apiBase, asset, onClose }: AssetViewerProps) {
   const streamUrl = `${apiBase}/api/assets/${asset.id}/stream`;
+  const thumbnailUrl = asset.thumbnail_url
+    ? `${apiBase}${asset.thumbnail_url}`
+    : undefined;
   const file = asset.files[0];
   const extension = file?.relative_path.split(".").pop()?.toLowerCase();
 
@@ -48,7 +52,7 @@ export function AssetViewer({ apiBase, asset, onClose }: AssetViewerProps) {
 
         <div className="viewer-stage">
           {asset.media_type === "video" ? (
-            <video controls preload="metadata" src={streamUrl} />
+            <video controls poster={thumbnailUrl} preload="metadata" src={streamUrl} />
           ) : null}
           {asset.media_type === "audio" ? (
             <audio controls preload="metadata" src={streamUrl} />

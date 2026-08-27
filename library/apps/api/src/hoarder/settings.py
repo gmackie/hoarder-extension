@@ -8,6 +8,7 @@ class StorageRootSettings(BaseModel):
     path: str
     sentinel: str | None = None
     exclude_patterns: list[str] = Field(default_factory=list)
+    thumbnail_patterns: list[str] = Field(default_factory=list)
 
 
 class Settings(BaseSettings):

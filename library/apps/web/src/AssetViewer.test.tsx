@@ -10,6 +10,7 @@ const video: Asset = {
   title: "Museum Tour",
   media_type: "video",
   status: "available",
+  thumbnail_url: "/api/assets/video-1/thumbnail",
   files: [{ id: 1, relative_path: "Museum Tour.mkv", size: 2048 }],
 };
 
@@ -22,6 +23,10 @@ describe("AssetViewer", () => {
     expect(document.querySelector("video")).toHaveAttribute(
       "src",
       "http://catalog.test/api/assets/video-1/stream",
+    );
+    expect(document.querySelector("video")).toHaveAttribute(
+      "poster",
+      "http://catalog.test/api/assets/video-1/thumbnail",
     );
     expect(screen.getByRole("link", { name: "Download original" })).toHaveAttribute(
       "download",

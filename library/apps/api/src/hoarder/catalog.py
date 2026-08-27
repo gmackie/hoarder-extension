@@ -38,7 +38,15 @@ class Catalog:
         self.engine = engine
         self.storage_roots = storage_roots
         self.exclude_patterns = {
-            str(root["key"]): tuple(str(pattern) for pattern in root.get("exclude_patterns", []))
+            str(root["key"]): tuple(
+                str(pattern) for pattern in root.get("exclude_patterns", [])
+            )
+            for root in storage_roots
+        }
+        self.thumbnail_patterns = {
+            str(root["key"]): tuple(
+                str(pattern) for pattern in root.get("thumbnail_patterns", [])
+            )
             for root in storage_roots
         }
 
@@ -216,7 +224,9 @@ class Catalog:
                     asset.status = "available"
                 elif locations and all(excluded for _, _, excluded in locations):
                     asset.status = "excluded"
-                elif locations and all(health == "online" for health, _, _ in locations):
+                elif locations and all(
+                    health == "online" for health, _, _ in locations
+                ):
                     asset.status = "missing"
             job.status = "completed"
             job.result = {"discovered": discovered}
@@ -234,7 +244,7 @@ class Catalog:
             statement = (
                 select(Asset)
                 .where(Asset.status != "excluded")
-                .options(selectinload(Asset.files))
+                .options(selectinload(Asset.files).selectinload(AssetFile.root))
             )
             if media_type is not None:
                 statement = statement.where(Asset.media_type == media_type)
@@ -252,6 +262,11 @@ class Catalog:
                     "title": asset.title,
                     "media_type": asset.media_type,
                     "status": asset.status,
+                    "thumbnail_url": (
+                        f"/api/assets/{asset.id}/thumbnail"
+                        if self._resolve_thumbnail_from_files(asset.files) is not None
+                        else None
+                    ),
                     "files": [
                         {
                             "id": file.id,
@@ -286,6 +301,46 @@ class Catalog:
                 if candidate.is_relative_to(root_path) and candidate.is_file():
                     return candidate
             return None
+
+    def resolve_thumbnail(self, asset_id: str) -> Path | None:
+        with Session(self.engine) as session:
+            asset = session.scalar(
+                select(Asset)
+                .where(Asset.id == asset_id)
+                .options(selectinload(Asset.files).selectinload(AssetFile.root))
+            )
+            if asset is None or asset.media_type not in {"video", "audio"}:
+                return None
+            return self._resolve_thumbnail_from_files(asset.files)
+
+    def _resolve_thumbnail_from_files(
+        self, asset_files: Sequence[AssetFile]
+    ) -> Path | None:
+        for asset_file in asset_files:
+            root = asset_file.root
+            if root.health != "online":
+                continue
+            source = Path(asset_file.relative_path)
+            values = {
+                "stem": source.stem,
+                "first": source.stem[:1].lower(),
+                "parent": source.parent.as_posix(),
+            }
+            root_path = Path(root.path).resolve()
+            for pattern in self.thumbnail_patterns.get(root.key, ()):
+                try:
+                    relative_thumbnail = pattern.format(**values)
+                except (KeyError, ValueError):
+                    continue
+                candidate = (root_path / relative_thumbnail).resolve()
+                if (
+                    candidate.is_relative_to(root_path)
+                    and candidate.suffix.lower()
+                    in {".avif", ".jpeg", ".jpg", ".png", ".webp"}
+                    and candidate.is_file()
+                ):
+                    return candidate
+        return None
 
     def list_jobs(self) -> list[dict[str, Any]]:
         with Session(self.engine) as session:

@@ -16,6 +16,9 @@ def test_storage_roots_are_loaded_from_portable_environment_configuration(
                     "label": "Backup archive",
                     "path": "/media/b",
                     "exclude_patterns": ["cache/**", "*.partial"],
+                    "thumbnail_patterns": [
+                        "cache/videos/{first}/{stem}.jpg",
+                    ],
                 },
             ]
         ),
@@ -26,3 +29,6 @@ def test_storage_roots_are_loaded_from_portable_environment_configuration(
     assert [root.key for root in settings.storage_roots] == ["primary", "backup"]
     assert settings.storage_roots[1].path == "/media/b"
     assert settings.storage_roots[1].exclude_patterns == ["cache/**", "*.partial"]
+    assert settings.storage_roots[1].thumbnail_patterns == [
+        "cache/videos/{first}/{stem}.jpg"
+    ]
