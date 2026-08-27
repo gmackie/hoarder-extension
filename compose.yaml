@@ -41,7 +41,7 @@ services:
       context: .
       dockerfile: library/apps/web/Dockerfile
     ports:
-      - "${HOARDER_PORT:-8088}:80"
+      - "${HOARDER_BIND_ADDRESS:-0.0.0.0}:${HOARDER_PORT:-8088}:80"
     depends_on:
       api:
         condition: service_healthy

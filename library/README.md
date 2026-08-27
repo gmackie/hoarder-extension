@@ -34,6 +34,10 @@ touch /path/to/primary/media/.hoarder-root
 touch /path/to/secondary/media/.hoarder-root
 ```
 
+`HOARDER_BIND_ADDRESS` controls which host interface publishes the library.
+Use `127.0.0.1` for local-only access, a Tailscale IP for tailnet-only access,
+or `0.0.0.0` when access from every host interface is intentional.
+
 The sentinel prevents an unavailable network mount from looking like an empty
 directory and incorrectly transitioning catalog items to missing.
 
