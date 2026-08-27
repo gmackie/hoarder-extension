@@ -18,6 +18,7 @@ This first vertical slice includes:
 - Durable scan-job history.
 - A responsive PWA with Inbox, Videos, Music, Images, Source Channels,
   Curated Channels, and Jobs navigation.
+- In-app video, audio, and image inspection with explicit original downloads.
 - PostgreSQL migrations and a Docker Compose deployment.
 
 ## Run locally
@@ -71,6 +72,24 @@ keys, and sentinels come from `HOARDER_STORAGE_ROOTS`; no private hostnames or
 NAS names are compiled into the application. Additional roots can be added
 with a Compose override that supplies another read-only mount and includes it
 in the JSON configuration.
+
+Each root can also define `exclude_patterns` using paths relative to that root.
+Use this for generated downloader caches and derivatives that should not appear
+as library assets:
+
+```json
+{
+  "key": "archive",
+  "label": "Archive",
+  "path": "/media/primary",
+  "sentinel": ".hoarder-root",
+  "exclude_patterns": ["youtube-cache/**", "temporary/**"]
+}
+```
+
+Exclusions affect catalog metadata only. The scanner never removes or changes
+the underlying files, and previously indexed excluded-only assets disappear
+from normal browsing after the next successful scan.
 
 ## Run on a NAS over Tailscale
 
