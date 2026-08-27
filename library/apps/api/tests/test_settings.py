@@ -1,0 +1,22 @@
+import json
+
+from hoarder.settings import Settings
+
+
+def test_storage_roots_are_loaded_from_portable_environment_configuration(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv(
+        "HOARDER_STORAGE_ROOTS",
+        json.dumps(
+            [
+                {"key": "primary", "label": "Primary archive", "path": "/media/a"},
+                {"key": "backup", "label": "Backup archive", "path": "/media/b"},
+            ]
+        ),
+    )
+
+    settings = Settings()
+
+    assert [root.key for root in settings.storage_roots] == ["primary", "backup"]
+    assert settings.storage_roots[1].path == "/media/b"

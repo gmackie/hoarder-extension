@@ -4,6 +4,13 @@ Hoarder is a Manifest V3 extension for Brave and other Chromium browsers. It
 submits downloadable videos to your own MeTube or TubeArchivist instance and
 can upload images to an optional catalog API.
 
+## Hoarder Library
+
+This repository also contains the local media catalog and PWA that reconcile
+downloaded video, music, and images across multiple storage roots. See
+[library/README.md](library/README.md) for Docker Compose setup, portable root
+configuration, scanner safety semantics, API development, and PWA commands.
+
 The extension ships without hostnames, storage names, API keys, or project-run
 cloud services. You configure one or more archive targets in the popup and can
 switch the active target at any time.
