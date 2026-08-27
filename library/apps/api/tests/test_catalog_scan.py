@@ -197,3 +197,39 @@ def test_scan_refreshes_file_metadata_when_content_changes_in_place(
         asset = client.get("/api/assets").json()["items"][0]
         assert asset["id"] == asset_id
         assert asset["files"][0]["size"] == len(b"replacement-content")
+
+
+def test_scan_hides_generated_media_when_a_root_excludes_its_cache(
+    tmp_path: Path,
+) -> None:
+    media = tmp_path / "media"
+    cache = media / "youtube-cache" / "videos"
+    cache.mkdir(parents=True)
+    (media / "saved-reference.jpg").write_bytes(b"saved-image")
+    (cache / "generated-thumbnail.jpg").write_bytes(b"generated-image")
+    database_url = f"sqlite:///{tmp_path / 'catalog.db'}"
+
+    initial_app = create_app(
+        database_url=database_url,
+        storage_roots=[{"key": "archive", "label": "Archive", "path": str(media)}],
+    )
+    with TestClient(initial_app) as client:
+        client.post("/api/scans")
+        assert client.get("/api/assets?media_type=image").json()["total"] == 2
+
+    filtered_app = create_app(
+        database_url=database_url,
+        storage_roots=[
+            {
+                "key": "archive",
+                "label": "Archive",
+                "path": str(media),
+                "exclude_patterns": ["youtube-cache/**"],
+            }
+        ],
+    )
+    with TestClient(filtered_app) as client:
+        client.post("/api/scans")
+        images = client.get("/api/assets?media_type=image").json()["items"]
+
+    assert [image["title"] for image in images] == ["saved-reference"]

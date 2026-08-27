@@ -1,4 +1,5 @@
 from collections.abc import Mapping, Sequence
+from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +37,10 @@ class Catalog:
     ) -> None:
         self.engine = engine
         self.storage_roots = storage_roots
+        self.exclude_patterns = {
+            str(root["key"]): tuple(str(pattern) for pattern in root.get("exclude_patterns", []))
+            for root in storage_roots
+        }
 
     def initialize(self) -> None:
         Base.metadata.create_all(self.engine)
@@ -119,6 +124,8 @@ class Catalog:
                     if not candidate.is_file() or media_type is None:
                         continue
                     relative_path = candidate.relative_to(path).as_posix()
+                    if self._is_excluded(root.key, relative_path):
+                        continue
                     existing = session.scalar(
                         select(AssetFile).where(
                             AssetFile.root_id == root.id,
@@ -196,12 +203,20 @@ class Catalog:
                         (
                             Path(asset_file.root.path) / asset_file.relative_path
                         ).is_file(),
+                        self._is_excluded(
+                            asset_file.root.key, asset_file.relative_path
+                        ),
                     )
                     for asset_file in asset.files
                 ]
-                if any(health == "online" and exists for health, exists in locations):
+                if any(
+                    health == "online" and exists and not excluded
+                    for health, exists, excluded in locations
+                ):
                     asset.status = "available"
-                elif locations and all(health == "online" for health, _ in locations):
+                elif locations and all(excluded for _, _, excluded in locations):
+                    asset.status = "excluded"
+                elif locations and all(health == "online" for health, _, _ in locations):
                     asset.status = "missing"
             job.status = "completed"
             job.result = {"discovered": discovered}
@@ -216,7 +231,11 @@ class Catalog:
         offset: int = 0,
     ) -> tuple[list[dict[str, Any]], int]:
         with Session(self.engine) as session:
-            statement = select(Asset).options(selectinload(Asset.files))
+            statement = (
+                select(Asset)
+                .where(Asset.status != "excluded")
+                .options(selectinload(Asset.files))
+            )
             if media_type is not None:
                 statement = statement.where(Asset.media_type == media_type)
             if query:
@@ -245,6 +264,12 @@ class Catalog:
                 for asset in assets
             ]
             return items, int(total or 0)
+
+    def _is_excluded(self, root_key: str, relative_path: str) -> bool:
+        return any(
+            fnmatchcase(relative_path, pattern)
+            for pattern in self.exclude_patterns.get(root_key, ())
+        )
 
     def resolve_asset_file(self, asset_id: str) -> Path | None:
         with Session(self.engine) as session:

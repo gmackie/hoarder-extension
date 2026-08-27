@@ -11,7 +11,12 @@ def test_storage_roots_are_loaded_from_portable_environment_configuration(
         json.dumps(
             [
                 {"key": "primary", "label": "Primary archive", "path": "/media/a"},
-                {"key": "backup", "label": "Backup archive", "path": "/media/b"},
+                {
+                    "key": "backup",
+                    "label": "Backup archive",
+                    "path": "/media/b",
+                    "exclude_patterns": ["cache/**", "*.partial"],
+                },
             ]
         ),
     )
@@ -20,3 +25,4 @@ def test_storage_roots_are_loaded_from_portable_environment_configuration(
 
     assert [root.key for root in settings.storage_roots] == ["primary", "backup"]
     assert settings.storage_roots[1].path == "/media/b"
+    assert settings.storage_roots[1].exclude_patterns == ["cache/**", "*.partial"]

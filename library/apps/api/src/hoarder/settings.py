@@ -7,6 +7,7 @@ class StorageRootSettings(BaseModel):
     label: str
     path: str
     sentinel: str | None = None
+    exclude_patterns: list[str] = Field(default_factory=list)
 
 
 class Settings(BaseSettings):
