@@ -1,3 +1,4 @@
+import json
 from collections.abc import Mapping, Sequence
 from fnmatch import fnmatchcase
 from pathlib import Path
@@ -46,6 +47,27 @@ class Catalog:
         self.thumbnail_patterns = {
             str(root["key"]): tuple(
                 str(pattern) for pattern in root.get("thumbnail_patterns", [])
+            )
+            for root in storage_roots
+        }
+        self.channel_path_prefixes = {
+            str(root["key"]): tuple(
+                str(prefix) for prefix in root.get("channel_path_prefixes", [])
+            )
+            for root in storage_roots
+        }
+        self.channel_metadata_paths = {
+            str(root["key"]): (
+                str(root["channel_metadata_path"])
+                if root.get("channel_metadata_path")
+                else None
+            )
+            for root in storage_roots
+        }
+        self.channel_thumbnail_patterns = {
+            str(root["key"]): tuple(
+                str(pattern)
+                for pattern in root.get("channel_thumbnail_patterns", [])
             )
             for root in storage_roots
         }
@@ -237,6 +259,7 @@ class Catalog:
         *,
         media_type: str | None = None,
         query: str | None = None,
+        channel_id: str | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> tuple[list[dict[str, Any]], int]:
@@ -250,12 +273,24 @@ class Catalog:
                 statement = statement.where(Asset.media_type == media_type)
             if query:
                 statement = statement.where(Asset.title.ilike(f"%{query}%"))
-            total = session.scalar(
-                select(func.count()).select_from(statement.order_by(None).subquery())
-            )
-            assets = session.scalars(
-                statement.order_by(Asset.created_at.desc()).limit(limit).offset(offset)
-            ).all()
+            ordered_statement = statement.order_by(Asset.created_at.desc())
+            if channel_id is None:
+                total = session.scalar(
+                    select(func.count()).select_from(
+                        statement.order_by(None).subquery()
+                    )
+                )
+                assets = session.scalars(
+                    ordered_statement.limit(limit).offset(offset)
+                ).all()
+            else:
+                matching_assets = [
+                    asset
+                    for asset in session.scalars(ordered_statement).all()
+                    if channel_id in self._asset_channel_ids(asset.files)
+                ]
+                total = len(matching_assets)
+                assets = matching_assets[offset : offset + limit]
             items = [
                 {
                     "id": asset.id,
@@ -279,6 +314,158 @@ class Catalog:
                 for asset in assets
             ]
             return items, int(total or 0)
+
+    def list_channels(
+        self,
+        *,
+        query: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[list[dict[str, Any]], int]:
+        with Session(self.engine) as session:
+            assets = session.scalars(
+                select(Asset)
+                .where(
+                    Asset.status != "excluded",
+                    Asset.media_type.in_(("video", "audio")),
+                )
+                .options(selectinload(Asset.files).selectinload(AssetFile.root))
+            ).all()
+            roots = session.scalars(select(StorageRoot)).all()
+            metadata = self._load_channel_metadata(roots)
+            grouped: dict[str, dict[str, set[str]]] = {}
+            for asset in assets:
+                for channel_id in self._asset_channel_ids(asset.files):
+                    counts = grouped.setdefault(
+                        channel_id,
+                        {"video": set(), "audio": set(), "root_keys": set()},
+                    )
+                    counts[asset.media_type].add(asset.id)
+                    counts["root_keys"].update(
+                        asset_file.root.key
+                        for asset_file in asset.files
+                        if self._channel_id_for_file(asset_file) == channel_id
+                    )
+
+            items: list[dict[str, Any]] = []
+            for channel_id, counts in grouped.items():
+                details = metadata.get(channel_id, {})
+                title = str(details.get("title") or channel_id)
+                subscribers = details.get("subscribers")
+                if not isinstance(subscribers, int):
+                    subscribers = None
+                thumbnail = self._resolve_channel_thumbnail_from_roots(
+                    channel_id,
+                    [root for root in roots if root.key in counts["root_keys"]],
+                )
+                video_count = len(counts["video"])
+                audio_count = len(counts["audio"])
+                items.append(
+                    {
+                        "id": channel_id,
+                        "title": title,
+                        "video_count": video_count,
+                        "audio_count": audio_count,
+                        "total_count": video_count + audio_count,
+                        "subscribers": subscribers,
+                        "thumbnail_url": (
+                            f"/api/channels/{channel_id}/thumbnail"
+                            if thumbnail is not None
+                            else None
+                        ),
+                    }
+                )
+
+            if query:
+                normalized_query = query.casefold()
+                items = [
+                    item
+                    for item in items
+                    if normalized_query in str(item["title"]).casefold()
+                    or normalized_query in str(item["id"]).casefold()
+                ]
+            items.sort(key=lambda item: (str(item["title"]).casefold(), item["id"]))
+            total = len(items)
+            return items[offset : offset + limit], total
+
+    def _channel_id_for_file(self, asset_file: AssetFile) -> str | None:
+        path_parts = Path(asset_file.relative_path).parts
+        for prefix in self.channel_path_prefixes.get(asset_file.root.key, ()):
+            prefix_parts = Path(prefix).parts
+            if (
+                prefix_parts
+                and tuple(path_parts[: len(prefix_parts)]) == prefix_parts
+                and len(path_parts) > len(prefix_parts)
+            ):
+                return path_parts[len(prefix_parts)]
+        return None
+
+    def _asset_channel_ids(self, asset_files: Sequence[AssetFile]) -> set[str]:
+        return {
+            channel_id
+            for asset_file in asset_files
+            if (channel_id := self._channel_id_for_file(asset_file)) is not None
+        }
+
+    def _load_channel_metadata(
+        self, roots: Sequence[StorageRoot]
+    ) -> dict[str, dict[str, Any]]:
+        channels: dict[str, dict[str, Any]] = {}
+        for root in roots:
+            relative_path = self.channel_metadata_paths.get(root.key)
+            if not relative_path:
+                continue
+            root_path = Path(root.path).resolve()
+            candidate = (root_path / relative_path).resolve()
+            if not candidate.is_relative_to(root_path) or not candidate.is_file():
+                continue
+            try:
+                payload = json.loads(candidate.read_text())
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                continue
+            configured_channels = (
+                payload.get("channels") if isinstance(payload, dict) else None
+            )
+            if not isinstance(configured_channels, dict):
+                continue
+            for channel_id, details in configured_channels.items():
+                if isinstance(channel_id, str) and isinstance(details, dict):
+                    channels[channel_id] = details
+        return channels
+
+    def resolve_channel_thumbnail(self, channel_id: str) -> Path | None:
+        with Session(self.engine) as session:
+            roots = session.scalars(select(StorageRoot)).all()
+            return self._resolve_channel_thumbnail_from_roots(channel_id, roots)
+
+    def _resolve_channel_thumbnail_from_roots(
+        self, channel_id: str, roots: Sequence[StorageRoot]
+    ) -> Path | None:
+        if (
+            not channel_id
+            or len(channel_id) > 160
+            or "/" in channel_id
+            or "\\" in channel_id
+        ):
+            return None
+        for root in roots:
+            if root.health != "online":
+                continue
+            root_path = Path(root.path).resolve()
+            for pattern in self.channel_thumbnail_patterns.get(root.key, ()):
+                try:
+                    relative_thumbnail = pattern.format(channel_id=channel_id)
+                except (KeyError, ValueError):
+                    continue
+                candidate = (root_path / relative_thumbnail).resolve()
+                if (
+                    candidate.is_relative_to(root_path)
+                    and candidate.suffix.lower()
+                    in {".avif", ".jpeg", ".jpg", ".png", ".webp"}
+                    and candidate.is_file()
+                ):
+                    return candidate
+        return None
 
     def _is_excluded(self, root_key: str, relative_path: str) -> bool:
         return any(

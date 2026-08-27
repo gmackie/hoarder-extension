@@ -86,18 +86,27 @@ main {
   text-transform: uppercase;
 }
 h1 { margin: 0; font-size: clamp(2.5rem, 4vw, 4.25rem); line-height: 1; letter-spacing: -.045em; }
-.page-header > button {
+.header-actions { display: flex; align-items: center; gap: 10px; }
+.header-actions button {
   min-height: 44px;
   padding: 10px 16px;
-  border: 1px solid #4e968e;
   border-radius: 8px;
-  color: #071311;
-  background: var(--accent);
   font-weight: 750;
   cursor: pointer;
 }
-.page-header > button:hover { background: var(--accent-strong); }
-.page-header > button:disabled { opacity: .6; cursor: wait; }
+.header-actions .scan-button {
+  border: 1px solid #4e968e;
+  color: #071311;
+  background: var(--accent);
+}
+.header-actions .scan-button:hover { background: var(--accent-strong); }
+.header-actions .scan-button:disabled { opacity: .6; cursor: wait; }
+.header-actions .secondary-action {
+  border: 1px solid #496179;
+  color: #fff;
+  background: var(--panel-raised);
+}
+.header-actions .secondary-action:hover { border-color: var(--accent); }
 .scan-status { margin: -12px 0 24px; color: var(--success); }
 
 .catalog-toolbar {
@@ -153,6 +162,70 @@ h1 { margin: 0; font-size: clamp(2.5rem, 4vw, 4.25rem); line-height: 1; letter-s
   gap: 20px;
 }
 
+.channel-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 18px;
+}
+
+.channel-card {
+  display: grid;
+  grid-template-columns: 82px minmax(0, 1fr);
+  min-width: 0;
+  padding: 14px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: inherit;
+  background: var(--panel);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 140ms ease-out, transform 140ms ease-out, background 140ms ease-out;
+}
+.channel-card:hover {
+  border-color: #496179;
+  background: var(--panel-raised);
+  transform: translateY(-2px);
+}
+.channel-artwork {
+  position: relative;
+  display: grid;
+  width: 68px;
+  height: 68px;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid #344359;
+  border-radius: 50%;
+  color: #071311;
+  background: var(--accent);
+  font-size: 1.65rem;
+  font-weight: 800;
+}
+.channel-artwork img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.channel-card-copy { display: grid; min-width: 0; align-content: center; gap: 5px; }
+.channel-card-copy strong {
+  overflow: hidden;
+  font-size: 1rem;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.channel-card-copy span, .channel-card-copy small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: .8rem;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.channel-card-copy small { color: var(--accent); }
+
 .asset-card {
   display: grid;
   grid-template-rows: auto 1fr;
@@ -166,6 +239,10 @@ h1 { margin: 0; font-size: clamp(2.5rem, 4vw, 4.25rem); line-height: 1; letter-s
   text-align: left;
   cursor: pointer;
   transition: border-color 140ms ease-out, transform 140ms ease-out, background 140ms ease-out;
+}
+.asset-card, .channel-card {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 260px;
 }
 .asset-card:hover {
   border-color: #496179;
@@ -240,6 +317,7 @@ h1 { margin: 0; font-size: clamp(2.5rem, 4vw, 4.25rem); line-height: 1; letter-s
   text-align: center;
 }
 .empty-state strong { color: #fff; font-size: 1.25rem; }
+.standalone-empty-state { min-height: 50vh; }
 
 .jobs-list { display: grid; gap: 12px; }
 .jobs-list article {
@@ -356,6 +434,8 @@ h1 { margin: 0; font-size: clamp(2.5rem, 4vw, 4.25rem); line-height: 1; letter-s
   .page-header { align-items: center; margin-bottom: 20px; }
   .page-header > div > span { font-size: .68rem; }
   h1 { font-size: 2.5rem; }
+  .header-actions { align-items: stretch; flex-direction: column-reverse; }
+  .header-actions button { padding-inline: 12px; }
   .catalog-toolbar {
     top: 92px;
     align-items: stretch;
@@ -366,6 +446,7 @@ h1 { margin: 0; font-size: clamp(2.5rem, 4vw, 4.25rem); line-height: 1; letter-s
   .catalog-pagination { overflow-x: auto; }
   .catalog-pagination span { margin-right: auto; }
   .asset-grid { grid-template-columns: 1fr; gap: 16px; }
+  .channel-grid { grid-template-columns: 1fr; gap: 12px; }
   .asset-card-copy { min-height: 0; }
   .viewer-backdrop { padding: 0; place-items: stretch; }
   .asset-viewer { width: 100%; min-height: 100dvh; max-height: 100dvh; border: 0; border-radius: 0; }

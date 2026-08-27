@@ -151,6 +151,76 @@ describe("Hoarder Library navigation", () => {
     );
   });
 
+  it("browses source channels and opens a channel-filtered video catalog", async () => {
+    const fetch = vi.fn((input: string | URL | Request) => {
+      const url = String(input);
+      if (url.includes("/api/channels/UC-one/assets")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            items: [
+              {
+                id: "video-1",
+                title: "Channel video",
+                media_type: "video",
+                status: "available",
+                files: [{ id: 1, relative_path: "youtube/UC-one/video-1.mp4", size: 2048 }],
+              },
+            ],
+            total: 1,
+            limit: 50,
+            offset: 0,
+          }),
+        });
+      }
+      if (url.includes("/api/channels?")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            items: [
+              {
+                id: "UC-one",
+                title: "First Source",
+                video_count: 12,
+                audio_count: 1,
+                total_count: 13,
+                subscribers: 1200,
+                thumbnail_url: "/api/channels/UC-one/thumbnail",
+              },
+            ],
+            total: 1,
+            limit: 50,
+            offset: 0,
+          }),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({ items: [], total: 0, limit: 50, offset: 0 }),
+      });
+    });
+    vi.stubGlobal("fetch", fetch);
+    render(<App apiBase="http://catalog.test" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Source Channels" }));
+
+    expect(await screen.findByText("First Source")).toBeInTheDocument();
+    expect(screen.getByText("12 videos · 1 audio")).toBeInTheDocument();
+    expect(document.querySelector(".channel-card img")).toHaveAttribute(
+      "src",
+      "http://catalog.test/api/channels/UC-one/thumbnail",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Browse First Source" }));
+
+    expect(await screen.findByRole("heading", { name: "First Source" })).toBeInTheDocument();
+    expect(await screen.findByText("Channel video")).toBeInTheDocument();
+    expect(fetch).toHaveBeenLastCalledWith(
+      "http://catalog.test/api/channels/UC-one/assets?media_type=video&limit=50&offset=0",
+    );
+    expect(screen.getByRole("button", { name: "All source channels" })).toBeInTheDocument();
+  });
+
   it("shows storage scan progress in the Jobs lens", async () => {
     vi.stubGlobal(
       "fetch",

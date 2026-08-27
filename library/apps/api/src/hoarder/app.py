@@ -57,6 +57,42 @@ def create_app(
         )
         return {"items": items, "total": total, "limit": limit, "offset": offset}
 
+    @app.get("/api/channels")
+    def list_channels(
+        q: str | None = None,
+        limit: int = Query(default=50, ge=1, le=200),
+        offset: int = Query(default=0, ge=0),
+    ) -> dict[str, Any]:
+        items, total = catalog.list_channels(query=q, limit=limit, offset=offset)
+        return {"items": items, "total": total, "limit": limit, "offset": offset}
+
+    @app.get("/api/channels/{channel_id}/assets")
+    def list_channel_assets(
+        channel_id: str,
+        media_type: Literal["video", "audio"] | None = None,
+        q: str | None = None,
+        limit: int = Query(default=50, ge=1, le=200),
+        offset: int = Query(default=0, ge=0),
+    ) -> dict[str, Any]:
+        items, total = catalog.list_assets(
+            media_type=media_type,
+            query=q,
+            channel_id=channel_id,
+            limit=limit,
+            offset=offset,
+        )
+        return {"items": items, "total": total, "limit": limit, "offset": offset}
+
+    @app.get("/api/channels/{channel_id}/thumbnail")
+    def channel_thumbnail(channel_id: str):
+        path = catalog.resolve_channel_thumbnail(channel_id)
+        if path is None:
+            raise HTTPException(
+                status_code=404, detail="Channel thumbnail is unavailable"
+            )
+        media_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+        return FileResponse(path, media_type=media_type)
+
     @app.get("/api/assets/{asset_id}/stream")
     def stream_asset(
         asset_id: str, range_header: str | None = Header(None, alias="Range")

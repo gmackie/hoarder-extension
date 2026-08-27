@@ -2,9 +2,7 @@ import { type FormEvent, useCallback, useEffect, useRef, useState } from "react"
 
 import { AssetViewer, type Asset } from "./AssetViewer";
 
-export type AppProps = {
-  apiBase: string;
-};
+export type AppProps = { apiBase: string };
 
 const lenses = [
   "Inbox",
@@ -17,7 +15,6 @@ const lenses = [
 ] as const;
 
 type Lens = (typeof lenses)[number];
-
 type Job = {
   id: string;
   kind: string;
@@ -25,31 +22,48 @@ type Job = {
   result: { discovered?: number } | null;
   created_at: string;
 };
+type SourceChannel = {
+  id: string;
+  title: string;
+  video_count: number;
+  audio_count: number;
+  total_count: number;
+  subscribers: number | null;
+  thumbnail_url: string | null;
+};
 
 const mediaTypes: Partial<Record<Lens, Asset["media_type"]>> = {
   Videos: "video",
   Music: "audio",
   Images: "image",
 };
-
 const PAGE_SIZE = 50;
 
 export function App({ apiBase }: AppProps) {
   const [activeLens, setActiveLens] = useState<Lens>("Inbox");
   const [assets, setAssets] = useState<Asset[]>([]);
   const [totalAssets, setTotalAssets] = useState(0);
+  const [channels, setChannels] = useState<SourceChannel[]>([]);
+  const [totalChannels, setTotalChannels] = useState(0);
   const [offset, setOffset] = useState(0);
   const [searchDraft, setSearchDraft] = useState("");
   const [query, setQuery] = useState("");
   const [loadingAssets, setLoadingAssets] = useState(false);
+  const [loadingChannels, setLoadingChannels] = useState(false);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [scanStatus, setScanStatus] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
+  const [selectedChannel, setSelectedChannel] = useState<SourceChannel | null>(null);
 
   const loadAssets = useCallback(
-    async (lens: Lens, pageOffset: number, searchQuery: string) => {
+    async (
+      lens: Lens,
+      pageOffset: number,
+      searchQuery: string,
+      channelId?: string,
+    ) => {
       const mediaType = mediaTypes[lens];
       if (!mediaType && lens !== "Inbox") return;
       setError(null);
@@ -60,7 +74,10 @@ export function App({ apiBase }: AppProps) {
       parameters.set("offset", String(pageOffset));
       if (searchQuery) parameters.set("q", searchQuery);
       try {
-        const response = await fetch(`${apiBase}/api/assets?${parameters}`);
+        const resource = channelId
+          ? `/api/channels/${encodeURIComponent(channelId)}/assets`
+          : "/api/assets";
+        const response = await fetch(`${apiBase}${resource}?${parameters}`);
         if (!response.ok) throw new Error(`Catalog request failed (${response.status})`);
         const payload = (await response.json()) as { items: Asset[]; total: number };
         setAssets(payload.items);
@@ -74,45 +91,43 @@ export function App({ apiBase }: AppProps) {
     [apiBase],
   );
 
+  const loadChannels = useCallback(
+    async (pageOffset: number, searchQuery: string) => {
+      setError(null);
+      setLoadingChannels(true);
+      const parameters = new URLSearchParams({
+        limit: String(PAGE_SIZE),
+        offset: String(pageOffset),
+      });
+      if (searchQuery) parameters.set("q", searchQuery);
+      try {
+        const response = await fetch(`${apiBase}/api/channels?${parameters}`);
+        if (!response.ok) throw new Error(`Channel request failed (${response.status})`);
+        const payload = (await response.json()) as {
+          items: SourceChannel[];
+          total: number;
+        };
+        setChannels(payload.items);
+        setTotalChannels(payload.total);
+      } catch (reason: unknown) {
+        setError(reason instanceof Error ? reason.message : "Channel request failed");
+      } finally {
+        setLoadingChannels(false);
+      }
+    },
+    [apiBase],
+  );
+
+  const selectedChannelId = selectedChannel?.id;
+
   useEffect(() => {
-    void loadAssets(activeLens, offset, query);
-  }, [activeLens, loadAssets, offset, query]);
+    void loadAssets(activeLens, offset, query, selectedChannelId);
+  }, [activeLens, loadAssets, offset, query, selectedChannelId]);
 
-  const showsCatalog = activeLens === "Inbox" || Boolean(mediaTypes[activeLens]);
-  const firstVisible = assets.length > 0 ? offset + 1 : 0;
-  const lastVisible = assets.length > 0 ? offset + assets.length : 0;
-  const oldestOffset = totalAssets > 0
-    ? Math.floor((totalAssets - 1) / PAGE_SIZE) * PAGE_SIZE
-    : 0;
-
-  function submitSearch(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setOffset(0);
-    setQuery(searchDraft.trim());
-  }
-
-  function clearSearch() {
-    setSearchDraft("");
-    setOffset(0);
-    setQuery("");
-  }
-
-  async function scanStorage() {
-    setScanning(true);
-    setScanStatus(null);
-    setError(null);
-    try {
-      const response = await fetch(`${apiBase}/api/scans`, { method: "POST" });
-      if (!response.ok) throw new Error(`Scan request failed (${response.status})`);
-      await response.json() as { job_id: string; status: "queued" };
-      setScanStatus("Scan queued — follow progress in Jobs");
-      setActiveLens("Jobs");
-    } catch (reason: unknown) {
-      setError(reason instanceof Error ? reason.message : "Scan request failed");
-    } finally {
-      setScanning(false);
-    }
-  }
+  useEffect(() => {
+    if (activeLens !== "Source Channels") return;
+    void loadChannels(offset, query);
+  }, [activeLens, loadChannels, offset, query]);
 
   useEffect(() => {
     if (activeLens !== "Jobs") return;
@@ -141,6 +156,54 @@ export function App({ apiBase }: AppProps) {
     };
   }, [activeLens, apiBase]);
 
+  const showsCatalog = activeLens === "Inbox" || Boolean(mediaTypes[activeLens]);
+  const showsChannels = activeLens === "Source Channels";
+  const visibleItems = showsChannels ? channels.length : assets.length;
+  const totalItems = showsChannels ? totalChannels : totalAssets;
+  const loadingItems = showsChannels ? loadingChannels : loadingAssets;
+  const firstVisible = visibleItems > 0 ? offset + 1 : 0;
+  const lastVisible = visibleItems > 0 ? offset + visibleItems : 0;
+  const lastPageOffset = totalItems > 0
+    ? Math.floor((totalItems - 1) / PAGE_SIZE) * PAGE_SIZE
+    : 0;
+
+  function resetCatalogNavigation() {
+    setSelectedAsset(null);
+    setOffset(0);
+    setSearchDraft("");
+    setQuery("");
+  }
+
+  function submitSearch(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setOffset(0);
+    setQuery(searchDraft.trim());
+  }
+
+  function clearSearch() {
+    setSearchDraft("");
+    setOffset(0);
+    setQuery("");
+  }
+
+  async function scanStorage() {
+    setScanning(true);
+    setScanStatus(null);
+    setError(null);
+    try {
+      const response = await fetch(`${apiBase}/api/scans`, { method: "POST" });
+      if (!response.ok) throw new Error(`Scan request failed (${response.status})`);
+      await response.json() as { job_id: string; status: "queued" };
+      setScanStatus("Scan queued — follow progress in Jobs");
+      setSelectedChannel(null);
+      setActiveLens("Jobs");
+    } catch (reason: unknown) {
+      setError(reason instanceof Error ? reason.message : "Scan request failed");
+    } finally {
+      setScanning(false);
+    }
+  }
+
   return (
     <div className="app-shell">
       <aside>
@@ -152,10 +215,8 @@ export function App({ apiBase }: AppProps) {
               key={lens}
               onClick={() => {
                 setActiveLens(lens);
-                setSelectedAsset(null);
-                setOffset(0);
-                setSearchDraft("");
-                setQuery("");
+                setSelectedChannel(null);
+                resetCatalogNavigation();
               }}
               type="button"
             >
@@ -167,97 +228,132 @@ export function App({ apiBase }: AppProps) {
       <main>
         <header className="page-header">
           <div>
-            <span>Media catalog</span>
-            <h1>{activeLens}</h1>
+            <span>{selectedChannel ? "Source channel" : "Media catalog"}</span>
+            <h1>{selectedChannel?.title ?? activeLens}</h1>
           </div>
-          <button disabled={scanning} onClick={scanStorage} type="button">
-            {scanning ? "Scanning…" : "Scan storage"}
-          </button>
+          <div className="header-actions">
+            {selectedChannel ? (
+              <button
+                className="secondary-action"
+                onClick={() => {
+                  setSelectedChannel(null);
+                  setActiveLens("Source Channels");
+                  resetCatalogNavigation();
+                }}
+                type="button"
+              >
+                All source channels
+              </button>
+            ) : null}
+            <button
+              className="scan-button"
+              disabled={scanning}
+              onClick={scanStorage}
+              type="button"
+            >
+              {scanning ? "Scanning…" : "Scan storage"}
+            </button>
+          </div>
         </header>
         {scanStatus ? <p aria-live="polite" className="scan-status">{scanStatus}</p> : null}
         {error ? <p role="alert">{error}</p> : null}
-        {showsCatalog ? (
+        {showsCatalog || showsChannels ? (
           <>
-            <div className="catalog-toolbar">
-              <form aria-label="Search media" onSubmit={submitSearch} role="search">
-                <input
-                  aria-label="Search library"
-                  onChange={(event) => setSearchDraft(event.target.value)}
-                  placeholder={`Search ${activeLens.toLowerCase()}…`}
-                  type="search"
-                  value={searchDraft}
-                />
-                <button type="submit">Search</button>
-                {query || searchDraft ? (
-                  <button className="secondary-action" onClick={clearSearch} type="button">
-                    Clear
+            <CatalogToolbar
+              activeLens={activeLens}
+              firstVisible={firstVisible}
+              lastPageOffset={lastPageOffset}
+              lastVisible={lastVisible}
+              loading={loadingItems}
+              offset={offset}
+              query={query}
+              searchDraft={searchDraft}
+              selectedChannel={selectedChannel}
+              setOffset={setOffset}
+              setSearchDraft={setSearchDraft}
+              showsChannels={showsChannels}
+              submitSearch={submitSearch}
+              clearSearch={clearSearch}
+              totalItems={totalItems}
+              visibleItems={visibleItems}
+            />
+            {showsChannels ? (
+              <section aria-label="Source channels" className="channel-grid">
+                {channels.map((channel) => (
+                  <button
+                    aria-label={`Browse ${channel.title}`}
+                    className="channel-card"
+                    key={channel.id}
+                    onClick={() => {
+                      setSelectedChannel(channel);
+                      setActiveLens("Videos");
+                      resetCatalogNavigation();
+                    }}
+                    type="button"
+                  >
+                    <span className="channel-artwork">
+                      <span aria-hidden="true">{channel.title.slice(0, 1)}</span>
+                      {channel.thumbnail_url ? (
+                        <img
+                          alt=""
+                          loading="lazy"
+                          onError={(event) => { event.currentTarget.hidden = true; }}
+                          src={`${apiBase}${channel.thumbnail_url}`}
+                        />
+                      ) : null}
+                    </span>
+                    <span className="channel-card-copy">
+                      <strong>{channel.title}</strong>
+                      <span>{channel.video_count} videos · {channel.audio_count} audio</span>
+                      {channel.subscribers !== null ? (
+                        <small>{formatCount(channel.subscribers)} subscribers</small>
+                      ) : null}
+                    </span>
                   </button>
+                ))}
+                {channels.length === 0 ? (
+                  <CatalogEmptyState
+                    loading={loadingChannels}
+                    query={query}
+                    subject="source channels"
+                  />
                 ) : null}
-              </form>
-              <nav aria-label="Catalog pages" className="catalog-pagination">
-                <span aria-live="polite">
-                  {loadingAssets ? "Loading…" : `${firstVisible}–${lastVisible} of ${totalAssets}`}
-                </span>
-                <button disabled={offset === 0} onClick={() => setOffset(0)} type="button">
-                  Newest
-                </button>
-                <button
-                  disabled={offset === 0}
-                  onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
-                  type="button"
-                >
-                  Newer
-                </button>
-                <button
-                  disabled={offset + assets.length >= totalAssets}
-                  onClick={() => setOffset(offset + PAGE_SIZE)}
-                  type="button"
-                >
-                  Older
-                </button>
-                <button
-                  disabled={offset >= oldestOffset}
-                  onClick={() => setOffset(oldestOffset)}
-                  type="button"
-                >
-                  Oldest
-                </button>
-              </nav>
-            </div>
-            <section aria-label={`${activeLens} catalog`} className="asset-grid">
-            {assets.map((asset) => (
-              <button
-                aria-label={`View ${asset.title}`}
-                className="asset-card"
-                key={asset.id}
-                onClick={() => setSelectedAsset(asset)}
-                type="button"
-              >
-                <AssetPreview apiBase={apiBase} asset={asset} />
-                <span className="asset-card-copy">
-                  <strong>{asset.title}</strong>
-                  <span>{asset.files[0]?.relative_path}</span>
-                </span>
-              </button>
-            ))}
-            {assets.length === 0 ? (
-              <div className="empty-state">
-                <strong>{loadingAssets ? "Loading media…" : "No media found"}</strong>
-                <span>
-                  {query
-                    ? "Clear the search or try another title."
-                    : "Scan storage or choose another library section."}
-                </span>
-              </div>
-            ) : null}
-            </section>
+              </section>
+            ) : (
+              <section aria-label={`${activeLens} catalog`} className="asset-grid">
+                {assets.map((asset) => (
+                  <button
+                    aria-label={`View ${asset.title}`}
+                    className="asset-card"
+                    key={asset.id}
+                    onClick={() => setSelectedAsset(asset)}
+                    type="button"
+                  >
+                    <AssetPreview apiBase={apiBase} asset={asset} />
+                    <span className="asset-card-copy">
+                      <strong>{asset.title}</strong>
+                      <span>{asset.files[0]?.relative_path}</span>
+                    </span>
+                  </button>
+                ))}
+                {assets.length === 0 ? (
+                  <CatalogEmptyState loading={loadingAssets} query={query} subject="media" />
+                ) : null}
+              </section>
+            )}
           </>
+        ) : null}
+        {activeLens === "Curated Channels" ? (
+          <div className="empty-state standalone-empty-state">
+            <strong>Curated channels are next</strong>
+            <span>Build continuous collections from the source channels you trust.</span>
+          </div>
         ) : null}
         {activeLens === "Jobs" ? (
           <section aria-label="Background jobs" className="jobs-list">
             {jobs.map((job) => (
               <article key={job.id}>
-                <h2>{job.kind.replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase())}</h2>
+                <h2>{formatJobKind(job.kind)}</h2>
                 <strong>{job.status}</strong>
                 <p>{job.result?.discovered ?? 0} discovered</p>
               </article>
@@ -276,6 +372,131 @@ export function App({ apiBase }: AppProps) {
   );
 }
 
+type CatalogToolbarProps = {
+  activeLens: Lens;
+  clearSearch: () => void;
+  firstVisible: number;
+  lastPageOffset: number;
+  lastVisible: number;
+  loading: boolean;
+  offset: number;
+  query: string;
+  searchDraft: string;
+  selectedChannel: SourceChannel | null;
+  setOffset: (value: number) => void;
+  setSearchDraft: (value: string) => void;
+  showsChannels: boolean;
+  submitSearch: (event: FormEvent<HTMLFormElement>) => void;
+  totalItems: number;
+  visibleItems: number;
+};
+
+function CatalogToolbar(props: CatalogToolbarProps) {
+  const {
+    activeLens,
+    clearSearch,
+    firstVisible,
+    lastPageOffset,
+    lastVisible,
+    loading,
+    offset,
+    query,
+    searchDraft,
+    selectedChannel,
+    setOffset,
+    setSearchDraft,
+    showsChannels,
+    submitSearch,
+    totalItems,
+    visibleItems,
+  } = props;
+  return (
+    <div className="catalog-toolbar">
+      <form
+        aria-label={showsChannels ? "Search source channels" : "Search media"}
+        onSubmit={submitSearch}
+        role="search"
+      >
+        <input
+          aria-label="Search library"
+          onChange={(event) => setSearchDraft(event.target.value)}
+          placeholder={
+            showsChannels
+              ? "Search source channels…"
+              : `Search ${selectedChannel?.title ?? activeLens.toLowerCase()}…`
+          }
+          type="search"
+          value={searchDraft}
+        />
+        <button type="submit">Search</button>
+        {query || searchDraft ? (
+          <button className="secondary-action" onClick={clearSearch} type="button">
+            Clear
+          </button>
+        ) : null}
+      </form>
+      <nav aria-label="Catalog pages" className="catalog-pagination">
+        <span aria-live="polite">
+          {loading ? "Loading…" : `${firstVisible}–${lastVisible} of ${totalItems}`}
+        </span>
+        <button disabled={offset === 0} onClick={() => setOffset(0)} type="button">
+          {showsChannels ? "First" : "Newest"}
+        </button>
+        <button
+          disabled={offset === 0}
+          onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
+          type="button"
+        >
+          {showsChannels ? "Previous" : "Newer"}
+        </button>
+        <button
+          disabled={offset + visibleItems >= totalItems}
+          onClick={() => setOffset(offset + PAGE_SIZE)}
+          type="button"
+        >
+          {showsChannels ? "Next" : "Older"}
+        </button>
+        <button
+          disabled={offset >= lastPageOffset}
+          onClick={() => setOffset(lastPageOffset)}
+          type="button"
+        >
+          {showsChannels ? "Last" : "Oldest"}
+        </button>
+      </nav>
+    </div>
+  );
+}
+
+function CatalogEmptyState({
+  loading,
+  query,
+  subject,
+}: {
+  loading: boolean;
+  query: string;
+  subject: string;
+}) {
+  return (
+    <div className="empty-state">
+      <strong>{loading ? `Loading ${subject}…` : `No ${subject} found`}</strong>
+      <span>
+        {query
+          ? "Clear the search or try another title."
+          : "Scan storage or choose another library section."}
+      </span>
+    </div>
+  );
+}
+
+function formatCount(value: number) {
+  return new Intl.NumberFormat(undefined, { notation: "compact" }).format(value);
+}
+
+function formatJobKind(value: string) {
+  return value.replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase());
+}
+
 function AssetPreview({ apiBase, asset }: { apiBase: string; asset: Asset }) {
   const previewRef = useRef<HTMLSpanElement>(null);
   const [loadVideoFrame, setLoadVideoFrame] = useState(false);
@@ -287,27 +508,25 @@ function AssetPreview({ apiBase, asset }: { apiBase: string; asset: Asset }) {
       setLoadVideoFrame(true);
       return;
     }
-    const observer = new IntersectionObserver((entries) => {
-      if (entries.some((entry) => entry.isIntersecting)) {
-        setLoadVideoFrame(true);
-        observer.disconnect();
-      }
-    }, { rootMargin: "240px" });
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setLoadVideoFrame(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: "240px" },
+    );
     if (previewRef.current) observer.observe(previewRef.current);
     return () => observer.disconnect();
   }, [asset.media_type, asset.thumbnail_url]);
 
   return (
-    <span
-      className={`asset-preview asset-preview-${asset.media_type}`}
-      ref={previewRef}
-    >
+    <span className={`asset-preview asset-preview-${asset.media_type}`} ref={previewRef}>
       <span aria-hidden="true" className="media-glyph">
         {asset.media_type === "video" ? "▶" : asset.media_type === "audio" ? "♪" : ""}
       </span>
-      {asset.media_type === "image" ? (
-        <img alt="" loading="lazy" src={streamUrl} />
-      ) : null}
+      {asset.media_type === "image" ? <img alt="" loading="lazy" src={streamUrl} /> : null}
       {asset.thumbnail_url ? (
         <img
           alt=""

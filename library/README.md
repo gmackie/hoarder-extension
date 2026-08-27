@@ -15,6 +15,7 @@ This first vertical slice includes:
 - Stable asset identity when a file moves.
 - One catalog asset for duplicate copies across multiple roots.
 - Search, media-type filtering, pagination, and HTTP Range streaming.
+- Source-channel discovery, local channel artwork, and channel-filtered catalogs.
 - Durable scan-job history.
 - A responsive PWA with Inbox, Videos, Music, Images, Source Channels,
   Curated Channels, and Jobs navigation.
@@ -96,6 +97,52 @@ the underlying files, and previously indexed excluded-only assets disappear
 from normal browsing after the next successful scan. Matching thumbnail files
 remain available as card artwork and video-player posters without becoming
 standalone entries in the Images lens.
+
+### Organize media by source channel
+
+Channel discovery is also root-specific and does not depend on a particular
+downloader. `channel_path_prefixes` lists the directories whose next path
+segment identifies a channel. For example, `youtube/UC123/video.mp4` belongs
+to channel `UC123` when the prefix is `youtube`.
+
+An optional root-relative `channel_metadata_path` can add friendly titles and
+subscriber counts. `channel_thumbnail_patterns` locates existing channel art;
+it supports the `{channel_id}` placeholder. None of these files are copied or
+modified by the library.
+
+```json
+{
+  "key": "archive",
+  "label": "Archive",
+  "path": "/media/primary",
+  "exclude_patterns": ["youtube-cache/**", "hoarder-metadata/**"],
+  "channel_path_prefixes": ["youtube"],
+  "channel_metadata_path": "hoarder-metadata/channels.json",
+  "channel_thumbnail_patterns": [
+    "youtube-cache/channels/{channel_id}_thumb.jpg"
+  ]
+}
+```
+
+The metadata file is deliberately downloader-neutral so other users can
+generate it from TubeArchivist, yt-dlp sidecars, or their own catalog:
+
+```json
+{
+  "channels": {
+    "UC123": {
+      "title": "Example Channel",
+      "subscribers": 125000
+    }
+  }
+}
+```
+
+If the metadata or artwork is absent, channel browsing still works and falls
+back to the directory identifier and a generated initial. The corresponding
+resource endpoints are `GET /api/channels`,
+`GET /api/channels/{channel_id}/assets`, and
+`GET /api/channels/{channel_id}/thumbnail`.
 
 ## Run on a NAS over Tailscale
 

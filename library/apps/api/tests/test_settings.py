@@ -19,6 +19,11 @@ def test_storage_roots_are_loaded_from_portable_environment_configuration(
                     "thumbnail_patterns": [
                         "cache/videos/{first}/{stem}.jpg",
                     ],
+                    "channel_path_prefixes": ["youtube"],
+                    "channel_metadata_path": "metadata/channels.json",
+                    "channel_thumbnail_patterns": [
+                        "cache/channels/{channel_id}_thumb.jpg",
+                    ],
                 },
             ]
         ),
@@ -31,4 +36,9 @@ def test_storage_roots_are_loaded_from_portable_environment_configuration(
     assert settings.storage_roots[1].exclude_patterns == ["cache/**", "*.partial"]
     assert settings.storage_roots[1].thumbnail_patterns == [
         "cache/videos/{first}/{stem}.jpg"
+    ]
+    assert settings.storage_roots[1].channel_path_prefixes == ["youtube"]
+    assert settings.storage_roots[1].channel_metadata_path == "metadata/channels.json"
+    assert settings.storage_roots[1].channel_thumbnail_patterns == [
+        "cache/channels/{channel_id}_thumb.jpg"
     ]

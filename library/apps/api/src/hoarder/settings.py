@@ -9,6 +9,9 @@ class StorageRootSettings(BaseModel):
     sentinel: str | None = None
     exclude_patterns: list[str] = Field(default_factory=list)
     thumbnail_patterns: list[str] = Field(default_factory=list)
+    channel_path_prefixes: list[str] = Field(default_factory=list)
+    channel_metadata_path: str | None = None
+    channel_thumbnail_patterns: list[str] = Field(default_factory=list)
 
 
 class Settings(BaseSettings):
