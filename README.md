@@ -31,9 +31,9 @@ checksummed release in a stable per-user directory:
 
 ```sh
 curl -fsSLo install-hoarder.sh \
-  https://raw.githubusercontent.com/gmackie/hoarder-extension/v1.0.8/scripts/install-macos.sh
+  https://raw.githubusercontent.com/gmackie/hoarder-extension/v1.0.9/scripts/install-macos.sh
 sh install-hoarder.sh \
-  --version 1.0.8 \
+  --version 1.0.9 \
   --enable-auto-update
 ```
 
@@ -72,7 +72,7 @@ The updater is configurable for other users and forks:
 
 ```sh
 sh install-hoarder.sh \
-  --version 1.0.8 \
+  --version 1.0.9 \
   --enable-auto-update \
   --repository owner/hoarder-extension \
   --release-base-url https://github.com/owner/hoarder-extension/releases/download \

@@ -170,6 +170,68 @@ describe("extension installation", () => {
     expect(globalThis.chrome.runtime.reload).toHaveBeenCalledOnce();
   });
 
+  it("continues submitting when Brave cannot load a status icon", async () => {
+    globalThis.chrome.storage = {
+      local: {
+        get: vi.fn(async () => ({
+          activeTargetId: "home",
+          targets: [
+            {
+              id: "home",
+              name: "Home",
+              metubeUrl: "https://downloads.example.test",
+            },
+          ],
+        })),
+        set: vi.fn(async () => {}),
+      },
+    };
+    globalThis.chrome.cookies = { getAll: vi.fn(async () => []) };
+    globalThis.chrome.action.setIcon.mockRejectedValue(
+      new Error("Failed to fetch"),
+    );
+    globalThis.fetch = vi.fn(async (url) => {
+      if (url.endsWith("/history")) {
+        return jsonResponse({ done: [], queue: [] });
+      }
+      if (url.endsWith("/upload-cookies")) {
+        return jsonResponse(null);
+      }
+      if (url.endsWith("/add")) {
+        return jsonResponse({ status: "ok" });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+
+    await import("../src/background.js");
+    const messageHandler =
+      globalThis.chrome.runtime.onMessage.addListener.mock.calls[0][0];
+    const response = new Promise((resolve) => {
+      messageHandler(
+        {
+          type: "submit-url",
+          url: "https://media.example.test/video.mp4",
+          tabId: 19,
+        },
+        {},
+        resolve,
+      );
+    });
+
+    await expect(response).resolves.toEqual({ ok: true });
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      "https://downloads.example.test/add",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(globalThis.chrome.action.setBadgeText).toHaveBeenLastCalledWith({
+      text: "✓",
+      tabId: 19,
+    });
+    expect(
+      globalThis.chrome.action.setBadgeBackgroundColor,
+    ).toHaveBeenLastCalledWith({ color: "#2E7D32", tabId: 19 });
+  });
+
   it("shows a failure icon when a submission is rejected", async () => {
     globalThis.chrome.storage = {
       local: {

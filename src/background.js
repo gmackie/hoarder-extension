@@ -34,6 +34,11 @@ const actionTitles = {
   saved: "Hoarder: saved",
   failed: "Hoarder: save failed",
 };
+const actionBadgeFallbacks = {
+  saving: { text: "…", color: "#F9A825" },
+  saved: { text: "✓", color: "#2E7D32" },
+  failed: { text: "!", color: "#C62828" },
+};
 
 async function setActionIcon(state, tabId) {
   const iconDetails = { path: actionIcons[state] };
@@ -54,7 +59,20 @@ async function setActionIcon(state, tabId) {
       }),
     );
   }
-  await Promise.all(updates);
+  const [iconResult] = await Promise.allSettled(updates);
+  const fallback = actionBadgeFallbacks[state];
+  if (iconResult.status === "rejected" && fallback) {
+    await Promise.allSettled([
+      chrome.action.setBadgeText({
+        text: fallback.text,
+        ...(Number.isInteger(tabId) ? { tabId } : {}),
+      }),
+      chrome.action.setBadgeBackgroundColor({
+        color: fallback.color,
+        ...(Number.isInteger(tabId) ? { tabId } : {}),
+      }),
+    ]);
+  }
 }
 
 async function submitUrlWithActionState(url, tabId) {
