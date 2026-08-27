@@ -124,6 +124,22 @@ Ordinary pages, platform home pages, and `blob:`-only players are ignored. The
 configured delay allows single-page applications time to expose their media.
 MeTube history prevents the same URL and folder from being queued repeatedly.
 
+## Server-side deletion policy
+
+Hoarder submits downloads but never deletes archived media. Removing an item
+from MeTube's **Completed** list also preserves the downloaded file by default.
+This is controlled by MeTube, not by the extension.
+
+If every user of a MeTube instance should permanently delete media when using
+its trash action, the server administrator can set
+`DELETE_FILE_ON_TRASHCAN=true`. That setting is global and destructive: it
+applies to completed downloads submitted by Hoarder and by every other MeTube
+client. Leave the default `false` when Completed is only workflow history.
+
+See MeTube's
+[download behavior configuration](https://github.com/alexta69/metube#%EF%B8%8F-configuration-via-environment-variables)
+for the authoritative server-side semantics.
+
 ## Image API contract
 
 Image support is optional. The configured API must accept `POST /upload` as
