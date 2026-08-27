@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Literal
 
-from fastapi import FastAPI, Header, HTTPException, Query
+from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import create_engine
 
@@ -25,9 +25,11 @@ def create_app(
 
     app = FastAPI(title="Hoarder Library", lifespan=lifespan)
 
-    @app.post("/api/scans")
-    def scan() -> dict[str, Any]:
-        return catalog.scan()
+    @app.post("/api/scans", status_code=status.HTTP_202_ACCEPTED)
+    def scan(background_tasks: BackgroundTasks) -> dict[str, Any]:
+        job_id = catalog.queue_scan()
+        background_tasks.add_task(catalog.run_queued_scan, job_id)
+        return {"job_id": job_id, "status": "queued"}
 
     @app.get("/api/jobs")
     def list_jobs() -> dict[str, Any]:

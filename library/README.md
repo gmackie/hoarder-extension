@@ -9,6 +9,9 @@ This first vertical slice includes:
 - Multiple configurable, read-only media roots.
 - Sentinel-based online, degraded, and offline root health.
 - Idempotent scanning for video, audio, and image files.
+- Queued background scans with live status in the Jobs lens.
+- Full fingerprints for small files and bounded head/middle/tail fingerprints
+  for large media so first-time NAS scans stay practical.
 - Stable asset identity when a file moves.
 - One catalog asset for duplicate copies across multiple roots.
 - Search, media-type filtering, pagination, and HTTP Range streaming.
@@ -58,11 +61,35 @@ curl http://localhost:8088/api/health
 curl http://localhost:8088/api/roots
 ```
 
+The scan request returns `202 Accepted` immediately. Open the Jobs lens, or
+poll `/api/jobs`, to follow the queued, running, completed, or failed state.
+Submitting another scan while one is active returns the existing job instead
+of starting overlapping storage walks.
+
 The default Compose configuration has two generic roots. Labels, paths, root
 keys, and sentinels come from `HOARDER_STORAGE_ROOTS`; no private hostnames or
 NAS names are compiled into the application. Additional roots can be added
 with a Compose override that supplies another read-only mount and includes it
 in the JSON configuration.
+
+## Run on a NAS over Tailscale
+
+Use the NAS Tailscale IPv4 address as `HOARDER_BIND_ADDRESS`, keep each media
+root mounted read-only by Compose, and place the database on persistent local
+storage:
+
+```dotenv
+HOARDER_BIND_ADDRESS=100.x.y.z
+HOARDER_PORT=8088
+HOARDER_DB_DATA=/persistent/apps/hoarder-library/postgres
+HOARDER_MEDIA_ROOT_1=/local/archive
+HOARDER_MEDIA_ROOT_2=/mounted/secondary-archive
+HOARDER_STORAGE_ROOTS=[{"key":"local","label":"Local NAS","path":"/media/primary","sentinel":".hoarder-root"},{"key":"secondary","label":"Secondary NAS","path":"/media/secondary","sentinel":".hoarder-root"}]
+```
+
+Generate a unique `HOARDER_DB_PASSWORD`, protect `.env` with mode `0600`, and
+create `.hoarder-root` inside each host media root before starting the stack.
+The app will then be available only at `http://<tailscale-host-or-ip>:8088`.
 
 ## Development
 

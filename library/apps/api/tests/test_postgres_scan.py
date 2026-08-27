@@ -28,8 +28,10 @@ def test_postgres_catalog_accepts_nanosecond_file_timestamps(tmp_path: Path) -> 
     try:
         with TestClient(app) as client:
             response = client.post("/api/scans")
-            assert response.status_code == 200
-            assert response.json()["discovered"] == 1
+            assert response.status_code == 202
+            job = client.get("/api/jobs").json()["items"][0]
+            assert job["status"] == "completed"
+            assert job["result"]["discovered"] == 1
     finally:
         Base.metadata.drop_all(engine)
         engine.dispose()

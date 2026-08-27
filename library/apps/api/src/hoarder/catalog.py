@@ -1,11 +1,11 @@
 from collections.abc import Mapping, Sequence
-from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
 from sqlalchemy import Engine, func, select
 from sqlalchemy.orm import Session, selectinload
 
+from .fingerprints import fingerprint_media
 from .models import Asset, AssetFile, Base, Job, StorageRoot
 
 MEDIA_TYPES = {
@@ -66,12 +66,44 @@ class Catalog:
                     )
             session.commit()
 
-    def scan(self) -> dict[str, int]:
+    def queue_scan(self) -> str:
+        with Session(self.engine) as session:
+            active_job = session.scalar(
+                select(Job)
+                .where(
+                    Job.kind == "storage_scan",
+                    Job.status.in_(("queued", "running")),
+                )
+                .order_by(Job.created_at.desc())
+                .limit(1)
+            )
+            if active_job is not None:
+                return active_job.id
+            job = Job(kind="storage_scan", status="queued")
+            session.add(job)
+            session.commit()
+            return job.id
+
+    def run_queued_scan(self, job_id: str) -> None:
+        try:
+            self._run_scan(job_id)
+        except Exception as error:
+            with Session(self.engine) as session:
+                job = session.get(Job, job_id)
+                if job is not None:
+                    job.status = "failed"
+                    job.result = {"error": type(error).__name__}
+                    session.commit()
+            raise
+
+    def _run_scan(self, job_id: str) -> None:
         discovered = 0
         with Session(self.engine) as session:
-            job = Job(kind="storage_scan", status="running")
-            session.add(job)
-            session.flush()
+            job = session.get(Job, job_id)
+            if job is None:
+                return
+            job.status = "running"
+            session.commit()
             roots = session.scalars(select(StorageRoot)).all()
             for root in roots:
                 path = Path(root.path)
@@ -101,11 +133,11 @@ class Catalog:
                         ):
                             existing.size = stat.st_size
                             existing.mtime_ns = stat.st_mtime_ns
-                            existing.fingerprint = _fingerprint(candidate)
+                            existing.fingerprint = fingerprint_media(candidate)
                         existing.asset.status = "available"
                         continue
                     stat = candidate.stat()
-                    fingerprint = _fingerprint(candidate)
+                    fingerprint = fingerprint_media(candidate)
                     moved_file = session.scalar(
                         select(AssetFile)
                         .where(
@@ -174,8 +206,6 @@ class Catalog:
             job.status = "completed"
             job.result = {"discovered": discovered}
             session.commit()
-            job_id = job.id
-        return {"discovered": discovered, "job_id": job_id}
 
     def list_assets(
         self,
@@ -261,11 +291,3 @@ class Catalog:
             for health in session.scalars(select(StorageRoot.health)):
                 states[health if health in states else "unknown"] += 1
         return {"status": "ok", "database": "ok", "roots": states}
-
-
-def _fingerprint(path: Path) -> str:
-    digest = sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()

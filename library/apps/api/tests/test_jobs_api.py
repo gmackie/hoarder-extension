@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 from hoarder.app import create_app
 
 
-def test_scan_is_visible_as_a_completed_job(tmp_path: Path) -> None:
+def test_scan_is_queued_without_holding_the_http_request_open(tmp_path: Path) -> None:
     media = tmp_path / "media"
     media.mkdir()
     (media / "clip.mp4").write_bytes(b"video")
@@ -14,9 +14,12 @@ def test_scan_is_visible_as_a_completed_job(tmp_path: Path) -> None:
     )
 
     with TestClient(app) as client:
-        scan = client.post("/api/scans").json()
+        response = client.post("/api/scans")
+        scan = response.json()
 
         jobs = client.get("/api/jobs").json()["items"]
+        assert response.status_code == 202
+        assert scan["status"] == "queued"
         assert jobs[0]["id"] == scan["job_id"]
         assert jobs[0]["kind"] == "storage_scan"
         assert jobs[0]["status"] == "completed"

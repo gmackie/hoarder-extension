@@ -44,7 +44,8 @@ def test_missing_root_sentinel_prevents_scanning_the_wrong_mount(
     )
 
     with TestClient(app) as client:
-        scan = client.post("/api/scans").json()
+        client.post("/api/scans")
 
-        assert scan["discovered"] == 0
+        job = client.get("/api/jobs").json()["items"][0]
+        assert job["result"]["discovered"] == 0
         assert client.get("/api/roots").json()["items"][0]["health"] == "degraded"

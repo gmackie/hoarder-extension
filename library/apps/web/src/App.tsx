@@ -77,9 +77,9 @@ export function App({ apiBase }: AppProps) {
     try {
       const response = await fetch(`${apiBase}/api/scans`, { method: "POST" });
       if (!response.ok) throw new Error(`Scan request failed (${response.status})`);
-      const result = (await response.json()) as { discovered: number };
-      setScanStatus(`Scan complete: ${result.discovered} discovered`);
-      await loadAssets(activeLens);
+      await response.json() as { job_id: string; status: "queued" };
+      setScanStatus("Scan queued — follow progress in Jobs");
+      setActiveLens("Jobs");
     } catch (reason: unknown) {
       setError(reason instanceof Error ? reason.message : "Scan request failed");
     } finally {
@@ -89,16 +89,29 @@ export function App({ apiBase }: AppProps) {
 
   useEffect(() => {
     if (activeLens !== "Jobs") return;
-    setError(null);
-    fetch(`${apiBase}/api/jobs`)
-      .then((response) => {
-        if (!response.ok) throw new Error(`Jobs request failed (${response.status})`);
-        return response.json() as Promise<{ items: Job[] }>;
-      })
-      .then((payload) => setJobs(payload.items))
-      .catch((reason: unknown) =>
-        setError(reason instanceof Error ? reason.message : "Jobs request failed"),
-      );
+    let active = true;
+    const loadJobs = () => {
+      setError(null);
+      fetch(`${apiBase}/api/jobs`)
+        .then((response) => {
+          if (!response.ok) throw new Error(`Jobs request failed (${response.status})`);
+          return response.json() as Promise<{ items: Job[] }>;
+        })
+        .then((payload) => {
+          if (active) setJobs(payload.items);
+        })
+        .catch((reason: unknown) => {
+          if (active) {
+            setError(reason instanceof Error ? reason.message : "Jobs request failed");
+          }
+        });
+    };
+    loadJobs();
+    const refresh = window.setInterval(loadJobs, 2_000);
+    return () => {
+      active = false;
+      window.clearInterval(refresh);
+    };
   }, [activeLens, apiBase]);
 
   return (

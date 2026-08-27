@@ -20,8 +20,9 @@ def test_scan_discovers_supported_media_in_a_configured_root(tmp_path: Path) -> 
     with TestClient(app) as client:
         response = client.post("/api/scans")
 
-        assert response.status_code == 200
-        assert response.json()["discovered"] == 3
+        assert response.status_code == 202
+        job = client.get("/api/jobs").json()["items"][0]
+        assert job["result"]["discovered"] == 3
 
         assets = client.get("/api/assets").json()["items"]
         assert {(asset["title"], asset["media_type"]) for asset in assets} == {

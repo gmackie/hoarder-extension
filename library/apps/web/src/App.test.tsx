@@ -5,6 +5,7 @@ import { App } from "./App";
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
@@ -82,6 +83,24 @@ describe("Hoarder Library navigation", () => {
     expect(screen.getByText("completed")).toBeInTheDocument();
   });
 
+  it("refreshes the Jobs lens while it is open", async () => {
+    vi.useFakeTimers();
+    const fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ items: [], total: 0 }),
+    });
+    vi.stubGlobal("fetch", fetch);
+    render(<App apiBase="http://catalog.test" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Jobs" }));
+    await vi.advanceTimersByTimeAsync(2_000);
+
+    const jobRequests = fetch.mock.calls.filter(
+      ([url]) => url === "http://catalog.test/api/jobs",
+    );
+    expect(jobRequests).toHaveLength(2);
+  });
+
   it("uses the Inbox as the unfiltered catalog landing view", async () => {
     const fetch = vi.fn().mockResolvedValue({
       ok: true,
@@ -117,20 +136,24 @@ describe("Hoarder Library navigation", () => {
       })
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ discovered: 2, job_id: "job-2" }),
+        json: async () => ({ status: "queued", job_id: "job-2" }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ items: [], total: 0 }),
       });
     vi.stubGlobal("fetch", fetch);
     render(<App apiBase="http://catalog.test" />);
 
     fireEvent.click(screen.getByRole("button", { name: "Scan storage" }));
 
-    expect(await screen.findByText("Scan complete: 2 discovered")).toBeInTheDocument();
+    expect(await screen.findByText("Scan queued — follow progress in Jobs")).toBeInTheDocument();
     expect(fetch).toHaveBeenCalledWith("http://catalog.test/api/scans", {
       method: "POST",
     });
   });
 
-  it("refreshes the active catalog after a scan", async () => {
+  it("opens the job monitor after queuing a scan", async () => {
     vi.stubGlobal(
       "fetch",
       vi
@@ -141,18 +164,18 @@ describe("Hoarder Library navigation", () => {
         })
         .mockResolvedValueOnce({
           ok: true,
-          json: async () => ({ discovered: 1, job_id: "job-3" }),
+          json: async () => ({ status: "queued", job_id: "job-3" }),
         })
         .mockResolvedValueOnce({
           ok: true,
           json: async () => ({
             items: [
               {
-                id: "new-asset",
-                title: "New media",
-                media_type: "video",
-                status: "available",
-                files: [{ id: 3, relative_path: "New media.mp4", size: 1024 }],
+                id: "job-3",
+                kind: "storage_scan",
+                status: "running",
+                result: null,
+                created_at: "2026-08-27T17:00:00Z",
               },
             ],
             total: 1,
@@ -163,6 +186,8 @@ describe("Hoarder Library navigation", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Scan storage" }));
 
-    expect(await screen.findByText("New media")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Jobs" })).toBeInTheDocument();
+    expect(await screen.findByText("Storage scan")).toBeInTheDocument();
+    expect(screen.getByText("running")).toBeInTheDocument();
   });
 });
