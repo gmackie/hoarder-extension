@@ -11,6 +11,8 @@ switch the active target at any time.
 ## Features
 
 - Optional automatic saving of detected video pages and direct media URLs.
+- Toolbar icons show when a submission is pending, accepted, or failed.
+- A popup link opens the active target's download queue or dashboard.
 - Multiple named archive targets with independent service URLs and folders.
 - MeTube support for arbitrary download folders.
 - Optional TubeArchivist routing for YouTube.
@@ -28,9 +30,9 @@ checksummed release in a stable per-user directory:
 
 ```sh
 curl -fsSLo install-hoarder.sh \
-  https://raw.githubusercontent.com/gmackie/hoarder-extension/v1.0.5/scripts/install-macos.sh
+  https://raw.githubusercontent.com/gmackie/hoarder-extension/v1.0.6/scripts/install-macos.sh
 sh install-hoarder.sh \
-  --version 1.0.5
+  --version 1.0.6
 ```
 
 Then open `brave://extensions`, enable **Developer mode**, choose **Load
@@ -123,6 +125,12 @@ Hoarder currently recognizes:
 Ordinary pages, platform home pages, and `blob:`-only players are ignored. The
 configured delay allows single-page applications time to expose their media.
 MeTube history prevents the same URL and folder from being queued repeatedly.
+
+The blue toolbar hourglass appears while Hoarder is submitting a URL. A green
+checkmark means the configured service accepted the submission into its queue;
+it does not mean a multi-minute media download has already finished. A red X
+means the submission failed. Open the popup and choose **Open dashboard /
+queue** to follow the downloader's actual progress.
 
 ## Server-side deletion policy
 

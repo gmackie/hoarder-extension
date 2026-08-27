@@ -34,7 +34,7 @@ h1 {
   font-size: 13px;
 }
 
-:where(button, input, select, summary):focus-visible {
+:where(button, input, select, summary, a):focus-visible {
   outline: 3px solid #1769aa;
   outline-offset: 2px;
 }
@@ -98,6 +98,22 @@ button.primary:disabled {
   min-height: 1em;
   color: #666;
   font-size: 12px;
+}
+
+#open-dashboard {
+  display: block;
+  margin-bottom: 12px;
+  color: #1769aa;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+}
+
+#open-dashboard[aria-disabled="true"] {
+  color: #888;
+  cursor: default;
+  pointer-events: none;
+  text-decoration: none;
 }
 
 details summary {

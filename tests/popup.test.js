@@ -59,6 +59,21 @@ describe("portable target editor", () => {
     expect(script).toContain("This cannot be undone.");
   });
 
+  it("associates popup submissions with the active browser tab", async () => {
+    const script = await readFile(popupScriptPath, "utf8");
+
+    expect(script).toContain("tabId: tab?.id");
+  });
+
+  it("offers a safe link to the active queue or dashboard", async () => {
+    const html = await readFile(popupPath, "utf8");
+
+    expect(html).toContain('id="open-dashboard"');
+    expect(html).toContain('target="_blank"');
+    expect(html).toContain('rel="noopener noreferrer"');
+    expect(html).toContain("Open dashboard / queue");
+  });
+
   it("renders a dynamic destination selector and target settings", async () => {
     const html = await readFile(popupPath, "utf8");
 

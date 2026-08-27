@@ -27,4 +27,23 @@ describe("Brave build", () => {
     expect(await readFile(join(outputDir, "src/background.js"), "utf8"))
       .toContain("chrome.runtime.onInstalled");
   });
+
+  it("packages toolbar icons for saving, saved, and failed states", async () => {
+    outputDir = await mkdtemp(join(tmpdir(), "hoarder-build-"));
+    const result = spawnSync(
+      process.execPath,
+      ["build.js", "--output", outputDir],
+      { cwd: new URL("..", import.meta.url), encoding: "utf8" },
+    );
+
+    expect(result.status, result.stderr).toBe(0);
+    for (const state of ["saving", "saved", "failed"]) {
+      for (const size of [16, 48, 128]) {
+        const icon = await readFile(
+          join(outputDir, "icons", `icon-${state}-${size}.png`),
+        );
+        expect(icon.byteLength).toBeGreaterThan(0);
+      }
+    }
+  });
 });

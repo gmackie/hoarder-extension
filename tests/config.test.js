@@ -126,4 +126,33 @@ describe("portable archive configuration", () => {
       }),
     ).toBe("metube");
   });
+
+  it("links to the queue used for the current URL", async () => {
+    const { getTargetDashboardUrl } = await import("../src/config.js");
+    const target = {
+      metubeUrl: "https://downloads.example.test",
+      tubeArchivistUrl: "https://youtube.example.test",
+      useTubeArchivistForYouTube: true,
+    };
+
+    expect(
+      getTargetDashboardUrl(
+        "https://www.youtube.com/watch?v=abc123",
+        target,
+      ),
+    ).toBe("https://youtube.example.test");
+    expect(
+      getTargetDashboardUrl("https://videos.example.test/movie.mp4", target),
+    ).toBe("https://downloads.example.test");
+    expect(
+      getTargetDashboardUrl("not a URL", {
+        tubeArchivistUrl: "https://youtube.example.test",
+      }),
+    ).toBe("https://youtube.example.test");
+    expect(
+      getTargetDashboardUrl("https://videos.example.test/movie.mp4", {
+        metubeUrl: "javascript:alert(1)",
+      }),
+    ).toBe("");
+  });
 });

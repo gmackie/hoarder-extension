@@ -188,3 +188,22 @@ export function getTargetService(url, target = {}) {
   }
   return "metube";
 }
+
+export function getTargetDashboardUrl(url, target = {}) {
+  const service = getTargetService(url, target);
+  const candidates =
+    service === "tubearchivist"
+      ? [target.tubeArchivistUrl, target.metubeUrl]
+      : [target.metubeUrl, target.tubeArchivistUrl];
+  for (const candidate of candidates) {
+    try {
+      const parsed = new URL(candidate);
+      if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+        return candidate;
+      }
+    } catch {
+      // Ignore missing or malformed service URLs.
+    }
+  }
+  return "";
+}

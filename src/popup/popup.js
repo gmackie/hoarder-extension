@@ -2,6 +2,7 @@ import {
   createTarget,
   getActiveTarget,
   getConfig,
+  getTargetDashboardUrl,
   getTargetService,
   saveConfig,
 } from "../config.js";
@@ -13,6 +14,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   const pageStatus = document.getElementById("page-status");
   const archiveButton = document.getElementById("archive-btn");
   const manualStatus = document.getElementById("manual-status");
+  const dashboardLink = document.getElementById("open-dashboard");
 
   function renderTargetOptions() {
     destination.replaceChildren();
@@ -59,11 +61,21 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (!target) {
       pageStatus.textContent = "Add an archive target in Settings";
       archiveButton.disabled = true;
+      dashboardLink.removeAttribute("href");
+      dashboardLink.setAttribute("aria-disabled", "true");
       return;
     }
     archiveButton.disabled = !tab?.url;
     const service = tab?.url ? getTargetService(tab.url, target) : "metube";
     pageStatus.textContent = `${target.name} → ${service}`;
+    const dashboardUrl = getTargetDashboardUrl(tab?.url || "", target);
+    if (dashboardUrl) {
+      dashboardLink.href = dashboardUrl;
+      dashboardLink.removeAttribute("aria-disabled");
+    } else {
+      dashboardLink.removeAttribute("href");
+      dashboardLink.setAttribute("aria-disabled", "true");
+    }
   }
 
   renderTargetOptions();
@@ -86,6 +98,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       const result = await chrome.runtime.sendMessage({
         type: "submit-url",
         url: tab.url,
+        tabId: tab?.id,
       });
       archiveButton.textContent = result.ok ? "Submitted!" : "Failed";
       if (!result.ok) {
@@ -109,6 +122,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       const result = await chrome.runtime.sendMessage({
         type: "submit-url",
         url,
+        tabId: tab?.id,
       });
       manualStatus.textContent = result.ok
         ? "Submitted!"
