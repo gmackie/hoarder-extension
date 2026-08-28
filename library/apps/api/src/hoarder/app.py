@@ -98,6 +98,42 @@ class CuratedChannelItemPatch(BaseModel):
         return value
 
 
+class PlayoutConfigurationPut(BaseModel):
+    enabled: bool
+    playback_mode: Literal["ordered", "shuffle"]
+    loop: bool
+    image_duration_seconds: int = Field(ge=3, le=3600)
+    item_statuses: list[ChannelItemStatus] = Field(min_length=1, max_length=5)
+
+    @field_validator("item_statuses")
+    @classmethod
+    def normalize_item_statuses(
+        cls, item_statuses: list[ChannelItemStatus]
+    ) -> list[ChannelItemStatus]:
+        return list(dict.fromkeys(item_statuses))
+
+
+class PlayoutSessionCreate(BaseModel):
+    screen_key: str = Field(min_length=1, max_length=120)
+
+    @field_validator("screen_key")
+    @classmethod
+    def validate_screen_key(cls, screen_key: str) -> str:
+        if not screen_key.strip():
+            raise ValueError("Screen key cannot be blank")
+        return screen_key.strip()
+
+
+class PlayoutSessionPatch(BaseModel):
+    expected_asset_id: str = Field(min_length=1, max_length=36)
+    position_ms: int = Field(ge=0)
+    paused: bool
+
+
+class PlayoutAdvanceCreate(BaseModel):
+    expected_asset_id: str = Field(min_length=1, max_length=36)
+
+
 class AudioExtractionCreate(BaseModel):
     title: str = Field(min_length=1, max_length=1024)
     artist: str = Field(default="", max_length=300)
@@ -491,6 +527,89 @@ def create_app(
         if not catalog.delete_curated_channel_item(channel_id, asset_id):
             raise HTTPException(status_code=404, detail="Curated channel item not found")
         return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    @app.get("/api/curated-channels/{channel_id}/playout")
+    def get_playout_configuration(channel_id: str) -> dict[str, Any]:
+        configuration = catalog.get_playout_configuration(channel_id)
+        if configuration is None:
+            raise HTTPException(status_code=404, detail="Curated channel not found")
+        return configuration
+
+    @app.get("/api/playout/channels")
+    def list_playout_channels() -> dict[str, Any]:
+        items = catalog.list_playout_channels()
+        return {"items": items, "total": len(items)}
+
+    @app.put("/api/curated-channels/{channel_id}/playout")
+    def update_playout_configuration(
+        channel_id: str, payload: PlayoutConfigurationPut
+    ) -> dict[str, Any]:
+        configuration = catalog.update_playout_configuration(
+            channel_id, payload.model_dump()
+        )
+        if configuration is None:
+            raise HTTPException(status_code=404, detail="Curated channel not found")
+        return configuration
+
+    @app.post("/api/curated-channels/{channel_id}/playout-sessions")
+    def start_playout_session(
+        channel_id: str, payload: PlayoutSessionCreate
+    ) -> JSONResponse:
+        playout_session, created, error = catalog.start_playout_session(
+            channel_id, payload.screen_key
+        )
+        if error == "not_found":
+            raise HTTPException(status_code=404, detail="Curated channel not found")
+        if error == "disabled":
+            raise HTTPException(status_code=409, detail="Channel playout is disabled")
+        if error == "empty":
+            raise HTTPException(
+                status_code=409, detail="Channel has no eligible online media"
+            )
+        assert playout_session is not None
+        return JSONResponse(
+            playout_session,
+            status_code=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
+
+    @app.get("/api/playout-sessions/{session_id}")
+    def get_playout_session(session_id: str) -> dict[str, Any]:
+        playout_session = catalog.get_playout_session(session_id)
+        if playout_session is None:
+            raise HTTPException(status_code=404, detail="Playout session not found")
+        return playout_session
+
+    @app.patch("/api/playout-sessions/{session_id}")
+    def update_playout_session(
+        session_id: str, payload: PlayoutSessionPatch
+    ) -> dict[str, Any]:
+        playout_session, error = catalog.update_playout_session(
+            session_id, payload.model_dump()
+        )
+        if error == "not_found":
+            raise HTTPException(status_code=404, detail="Playout session not found")
+        if error == "stale":
+            raise HTTPException(
+                status_code=409, detail="Screen state is stale; refresh the session"
+            )
+        assert playout_session is not None
+        return playout_session
+
+    @app.post("/api/playout-sessions/{session_id}/advance")
+    def advance_playout_session(
+        session_id: str, payload: PlayoutAdvanceCreate
+    ) -> dict[str, Any]:
+        playout_session, error = catalog.advance_playout_session(
+            session_id, payload.expected_asset_id
+        )
+        if error == "not_found":
+            raise HTTPException(status_code=404, detail="Playout session not found")
+        if error == "stale":
+            raise HTTPException(
+                status_code=409, detail="Screen state is stale; refresh the session"
+            )
+        assert playout_session is not None
+        return playout_session
 
     @app.get("/api/channels")
     def list_channels(

@@ -8,7 +8,7 @@ from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import Engine, func, or_, select
+from sqlalchemy import Engine, and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
@@ -25,6 +25,8 @@ from .models import (
     Derivative,
     Artist,
     Job,
+    PlayoutConfiguration,
+    PlayoutSession,
     Release,
     StorageRoot,
     Tag,
@@ -874,6 +876,407 @@ class Catalog:
             "position": item.position,
             "status": item.status,
             "asset": self._serialize_asset(item.asset),
+        }
+
+    def get_playout_configuration(
+        self, channel_id: str
+    ) -> dict[str, Any] | None:
+        with Session(self.engine) as session:
+            channel = session.get(CuratedChannel, channel_id)
+            if channel is None:
+                return None
+            configuration = session.scalar(
+                select(PlayoutConfiguration).where(
+                    PlayoutConfiguration.channel_id == channel_id
+                )
+            )
+            if configuration is None:
+                return self._default_playout_configuration(channel)
+            return self._serialize_playout_configuration(session, configuration)
+
+    def list_playout_channels(self) -> list[dict[str, Any]]:
+        with Session(self.engine) as session:
+            channels = session.scalars(
+                select(CuratedChannel)
+                .options(
+                    selectinload(CuratedChannel.items),
+                    selectinload(CuratedChannel.playout)
+                    .selectinload(PlayoutConfiguration.sessions)
+                    .selectinload(PlayoutSession.current_asset),
+                )
+                .order_by(CuratedChannel.name)
+            ).all()
+            summaries = []
+            now = datetime.now(UTC)
+            for channel in channels:
+                configuration = channel.playout
+                if configuration is None:
+                    serialized_configuration = self._default_playout_configuration(
+                        channel
+                    )
+                    playout_sessions: Sequence[PlayoutSession] = ()
+                else:
+                    serialized_configuration = self._serialize_playout_configuration(
+                        session, configuration
+                    )
+                    playout_sessions = configuration.sessions
+                session_summaries = [
+                    {
+                        "id": playout_session.id,
+                        "screen_key": playout_session.screen_key,
+                        "current_asset_id": playout_session.current_asset_id,
+                        "current_title": (
+                            playout_session.current_asset.title
+                            if playout_session.current_asset is not None
+                            else None
+                        ),
+                        "paused": playout_session.paused,
+                        "ended": playout_session.ended,
+                        "last_seen_at": playout_session.last_seen_at.isoformat(),
+                    }
+                    for playout_session in sorted(
+                        playout_sessions,
+                        key=lambda candidate: candidate.last_seen_at,
+                        reverse=True,
+                    )
+                ]
+                active_screen_count = sum(
+                    1
+                    for playout_session in playout_sessions
+                    if (
+                        now
+                        - (
+                            playout_session.last_seen_at
+                            if playout_session.last_seen_at.tzinfo is not None
+                            else playout_session.last_seen_at.replace(tzinfo=UTC)
+                        )
+                    ).total_seconds()
+                    <= 90
+                )
+                summaries.append(
+                    {
+                        "channel": self._serialize_curated_channel(channel),
+                        "configuration": serialized_configuration,
+                        "ready": bool(
+                            serialized_configuration["enabled"]
+                            and serialized_configuration["eligible_item_count"] > 0
+                        ),
+                        "active_screen_count": active_screen_count,
+                        "sessions": session_summaries,
+                    }
+                )
+            return summaries
+
+    def update_playout_configuration(
+        self, channel_id: str, updates: Mapping[str, Any]
+    ) -> dict[str, Any] | None:
+        with Session(self.engine) as session:
+            channel = session.get(CuratedChannel, channel_id)
+            if channel is None:
+                return None
+            configuration = session.scalar(
+                select(PlayoutConfiguration).where(
+                    PlayoutConfiguration.channel_id == channel_id
+                )
+            )
+            if configuration is None:
+                configuration = PlayoutConfiguration(channel=channel)
+                session.add(configuration)
+            configuration.enabled = bool(updates["enabled"])
+            configuration.playback_mode = str(updates["playback_mode"])
+            configuration.loop = bool(updates["loop"])
+            configuration.image_duration_seconds = int(
+                updates["image_duration_seconds"]
+            )
+            configuration.item_statuses = list(updates["item_statuses"])
+            configuration.updated_at = datetime.now(UTC)
+            session.flush()
+            result = self._serialize_playout_configuration(session, configuration)
+            session.commit()
+            return result
+
+    def start_playout_session(
+        self, channel_id: str, screen_key: str
+    ) -> tuple[dict[str, Any] | None, bool, str | None]:
+        with Session(self.engine) as session:
+            configuration = session.scalar(
+                select(PlayoutConfiguration)
+                .where(PlayoutConfiguration.channel_id == channel_id)
+                .options(selectinload(PlayoutConfiguration.channel))
+            )
+            if configuration is None or not configuration.enabled:
+                if session.get(CuratedChannel, channel_id) is None:
+                    return None, False, "not_found"
+                return None, False, "disabled"
+            playout_session = session.scalar(
+                select(PlayoutSession).where(
+                    PlayoutSession.configuration_id == configuration.id,
+                    PlayoutSession.screen_key == screen_key,
+                )
+            )
+            created = playout_session is None
+            if playout_session is None:
+                playout_session = PlayoutSession(
+                    configuration=configuration, screen_key=screen_key
+                )
+                session.add(playout_session)
+                session.flush()
+            items = self._eligible_playout_items(
+                session, configuration, playout_session.id, playout_session.cycle
+            )
+            if not items:
+                session.rollback()
+                return None, False, "empty"
+            eligible_ids = {item.asset_id for item in items}
+            if (
+                playout_session.ended
+                or playout_session.current_asset_id not in eligible_ids
+            ):
+                playout_session.current_asset_id = items[0].asset_id
+                playout_session.position_ms = 0
+                playout_session.paused = False
+                playout_session.ended = False
+            playout_session.last_seen_at = datetime.now(UTC)
+            result = self._serialize_playout_session(
+                session, playout_session, configuration, items
+            )
+            session.commit()
+            return result, created, None
+
+    def get_playout_session(self, session_id: str) -> dict[str, Any] | None:
+        with Session(self.engine) as session:
+            playout_session = self._load_playout_session(session, session_id)
+            if playout_session is None:
+                return None
+            configuration = playout_session.configuration
+            items = self._eligible_playout_items(
+                session, configuration, playout_session.id, playout_session.cycle
+            )
+            self._normalize_playout_session(playout_session, items)
+            result = self._serialize_playout_session(
+                session, playout_session, configuration, items
+            )
+            session.commit()
+            return result
+
+    def update_playout_session(
+        self, session_id: str, updates: Mapping[str, Any]
+    ) -> tuple[dict[str, Any] | None, str | None]:
+        with Session(self.engine) as session:
+            playout_session = self._load_playout_session(session, session_id)
+            if playout_session is None:
+                return None, "not_found"
+            if updates["expected_asset_id"] != playout_session.current_asset_id:
+                return None, "stale"
+            playout_session.position_ms = int(updates["position_ms"])
+            playout_session.paused = bool(updates["paused"])
+            playout_session.last_seen_at = datetime.now(UTC)
+            configuration = playout_session.configuration
+            items = self._eligible_playout_items(
+                session, configuration, playout_session.id, playout_session.cycle
+            )
+            result = self._serialize_playout_session(
+                session, playout_session, configuration, items
+            )
+            session.commit()
+            return result, None
+
+    def advance_playout_session(
+        self, session_id: str, expected_asset_id: str
+    ) -> tuple[dict[str, Any] | None, str | None]:
+        with Session(self.engine) as session:
+            playout_session = self._load_playout_session(session, session_id)
+            if playout_session is None:
+                return None, "not_found"
+            if expected_asset_id != playout_session.current_asset_id:
+                return None, "stale"
+            configuration = playout_session.configuration
+            items = self._eligible_playout_items(
+                session, configuration, playout_session.id, playout_session.cycle
+            )
+            current_index = next(
+                (
+                    index
+                    for index, item in enumerate(items)
+                    if item.asset_id == playout_session.current_asset_id
+                ),
+                -1,
+            )
+            if current_index + 1 < len(items):
+                playout_session.current_asset_id = items[current_index + 1].asset_id
+            elif configuration.loop and items:
+                playout_session.cycle += 1
+                items = self._eligible_playout_items(
+                    session, configuration, playout_session.id, playout_session.cycle
+                )
+                playout_session.current_asset_id = items[0].asset_id
+            else:
+                playout_session.current_asset_id = None
+                playout_session.ended = True
+            playout_session.position_ms = 0
+            playout_session.paused = False
+            playout_session.last_seen_at = datetime.now(UTC)
+            result = self._serialize_playout_session(
+                session, playout_session, configuration, items
+            )
+            session.commit()
+            return result, None
+
+    @staticmethod
+    def _load_playout_session(
+        session: Session, session_id: str
+    ) -> PlayoutSession | None:
+        return session.scalar(
+            select(PlayoutSession)
+            .where(PlayoutSession.id == session_id)
+            .options(
+                selectinload(PlayoutSession.configuration).selectinload(
+                    PlayoutConfiguration.channel
+                )
+            )
+        )
+
+    def _eligible_playout_items(
+        self,
+        session: Session,
+        configuration: PlayoutConfiguration,
+        session_id: str,
+        cycle: int,
+    ) -> list[CuratedChannelItem]:
+        items = session.scalars(
+            self._curated_item_statement(configuration.channel_id).where(
+                CuratedChannelItem.status.in_(configuration.item_statuses),
+                CuratedChannelItem.asset.has(
+                    and_(
+                        Asset.status == "available",
+                        Asset.media_type.in_(("video", "audio", "image")),
+                        Asset.files.any(
+                            AssetFile.root.has(StorageRoot.health == "online")
+                        ),
+                    )
+                ),
+            )
+        ).all()
+        if configuration.playback_mode == "shuffle":
+            return sorted(
+                items,
+                key=lambda item: hashlib.sha256(
+                    f"{session_id}:{cycle}:{item.asset_id}".encode()
+                ).hexdigest(),
+            )
+        return list(items)
+
+    @staticmethod
+    def _normalize_playout_session(
+        playout_session: PlayoutSession, items: Sequence[CuratedChannelItem]
+    ) -> None:
+        eligible_ids = {item.asset_id for item in items}
+        if not playout_session.ended and playout_session.current_asset_id not in eligible_ids:
+            playout_session.current_asset_id = items[0].asset_id if items else None
+            playout_session.position_ms = 0
+
+    def _serialize_playout_session(
+        self,
+        session: Session,
+        playout_session: PlayoutSession,
+        configuration: PlayoutConfiguration,
+        items: Sequence[CuratedChannelItem],
+    ) -> dict[str, Any]:
+        current_index = next(
+            (
+                index
+                for index, item in enumerate(items)
+                if item.asset_id == playout_session.current_asset_id
+            ),
+            -1,
+        )
+        current = items[current_index] if current_index >= 0 else None
+        next_item: CuratedChannelItem | None = None
+        if current_index >= 0 and current_index + 1 < len(items):
+            next_item = items[current_index + 1]
+        elif current_index >= 0 and configuration.loop:
+            following = self._eligible_playout_items(
+                session,
+                configuration,
+                playout_session.id,
+                playout_session.cycle + 1,
+            )
+            next_item = following[0] if following else None
+        return {
+            "id": playout_session.id,
+            "channel_id": configuration.channel_id,
+            "channel_name": configuration.channel.name,
+            "screen_key": playout_session.screen_key,
+            "cycle": playout_session.cycle,
+            "position_ms": playout_session.position_ms,
+            "paused": playout_session.paused,
+            "ended": playout_session.ended,
+            "current": self._serialize_playout_program(current, configuration),
+            "next": self._serialize_playout_program(next_item, configuration),
+            "last_seen_at": playout_session.last_seen_at.isoformat(),
+        }
+
+    def _serialize_playout_program(
+        self,
+        item: CuratedChannelItem | None,
+        configuration: PlayoutConfiguration,
+    ) -> dict[str, Any] | None:
+        if item is None:
+            return None
+        return {
+            "asset": self._serialize_asset(item.asset),
+            "stream_url": f"/api/assets/{item.asset_id}/stream",
+            "display_seconds": (
+                configuration.image_duration_seconds
+                if item.asset.media_type == "image"
+                else None
+            ),
+        }
+
+    def _serialize_playout_configuration(
+        self, session: Session, configuration: PlayoutConfiguration
+    ) -> dict[str, Any]:
+        eligible_count = session.scalar(
+            select(func.count())
+            .select_from(CuratedChannelItem)
+            .where(
+                CuratedChannelItem.channel_id == configuration.channel_id,
+                CuratedChannelItem.status.in_(configuration.item_statuses),
+                CuratedChannelItem.asset.has(
+                    and_(
+                        Asset.status == "available",
+                        Asset.media_type.in_(("video", "audio", "image")),
+                        Asset.files.any(
+                            AssetFile.root.has(StorageRoot.health == "online")
+                        ),
+                    )
+                ),
+            )
+        )
+        return {
+            "id": configuration.id,
+            "channel_id": configuration.channel_id,
+            "enabled": configuration.enabled,
+            "playback_mode": configuration.playback_mode,
+            "loop": configuration.loop,
+            "image_duration_seconds": configuration.image_duration_seconds,
+            "item_statuses": list(configuration.item_statuses),
+            "eligible_item_count": int(eligible_count or 0),
+            "updated_at": configuration.updated_at.isoformat(),
+        }
+
+    @staticmethod
+    def _default_playout_configuration(channel: CuratedChannel) -> dict[str, Any]:
+        return {
+            "id": None,
+            "channel_id": channel.id,
+            "enabled": False,
+            "playback_mode": "ordered",
+            "loop": True,
+            "image_duration_seconds": 15,
+            "item_statuses": ["selected", "used"],
+            "eligible_item_count": 0,
+            "updated_at": None,
         }
 
     def list_channels(

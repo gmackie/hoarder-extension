@@ -18,6 +18,8 @@ This first vertical slice includes:
 - Source-channel discovery, local channel artwork, and channel-filtered catalogs.
 - Durable ratings, favorites, workflow state, notes, and normalized tags.
 - Ordered curated channels with per-channel candidate/review/selection status.
+- Durable curated-channel playout with ordered or deterministic-shuffle loops,
+  restart-safe per-screen position, now/next metadata, and image timing.
 - Durable FFmpeg audio extraction jobs that resume after an API restart.
 - Atomic, FFprobe-validated M4A, Opus, and FLAC derivatives in writable storage.
 - A first-class music catalog with artists, releases, tracks, tags, artwork,
@@ -26,7 +28,7 @@ This first vertical slice includes:
   writes, content deduplication, normalized tags, and source-page provenance.
 - Durable scan-job history.
 - A responsive PWA with Inbox, Videos, Music, Images, Source Channels,
-  Curated Channels, and Jobs navigation.
+  Curated Channels, Playout, and Jobs navigation.
 - In-app video, audio, and image inspection with explicit original downloads.
 - PostgreSQL migrations and a Docker Compose deployment.
 
@@ -191,6 +193,38 @@ GET|PATCH|DELETE /api/curated-channels/{channel_id}
 GET|POST /api/curated-channels/{channel_id}/items
 PATCH|DELETE /api/curated-channels/{channel_id}/items/{asset_id}
 ```
+
+## Run channels on household screens
+
+Open the **Playout** lens after adding programs to a curated channel. Enable the
+channel, choose ordered or deterministic-shuffle playback, select which
+membership statuses are eligible, choose whether the schedule loops, and set
+the duration for still images. A channel is launchable only when it is enabled
+and has at least one eligible asset whose physical file is online.
+
+Each screen name identifies a durable session. Reopening the same channel with
+the same screen name resumes its current asset and the most recently saved
+video or audio position. Shuffle order is stable for that session and cycle,
+including across API restarts. Playout never changes an item's editorial state
+or modifies an archive file.
+
+The fullscreen player supports video, audio, and image programs, presents
+now/next information, automatically advances on media end, and periodically
+saves its position. Keyboard controls are `Space` for pause/resume, `Right` to
+skip, `M` to mute, `I` to toggle information, and `F` for fullscreen. The
+management view shows recently active screens and their current program.
+
+```text
+GET /api/playout/channels
+GET|PUT /api/curated-channels/{channel_id}/playout
+POST /api/curated-channels/{channel_id}/playout-sessions
+GET|PATCH /api/playout-sessions/{session_id}
+POST /api/playout-sessions/{session_id}/advance
+```
+
+This remains a playback plane over catalog identities. A later TV and movie
+adapter can add referenced assets to the catalog without coupling media
+discovery, transcoding, or archive mutation to screen-session state.
 
 ## Build the music library
 

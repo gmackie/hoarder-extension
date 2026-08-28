@@ -1,8 +1,10 @@
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
 import { AssetViewer, type Asset, type EditorialState } from "./AssetViewer";
+import { ChannelPlayer } from "./ChannelPlayer";
 import { CuratedChannels } from "./CuratedChannels";
 import { MusicLibrary } from "./MusicLibrary";
+import { PlayoutDashboard } from "./PlayoutDashboard";
 
 export type AppProps = { apiBase: string };
 
@@ -13,6 +15,7 @@ const lenses = [
   "Images",
   "Source Channels",
   "Curated Channels",
+  "Playout",
   "Jobs",
 ] as const;
 
@@ -49,6 +52,21 @@ const mediaTypes: Partial<Record<Lens, Asset["media_type"]>> = {
 const PAGE_SIZE = 50;
 
 export function App({ apiBase }: AppProps) {
+  const parameters = new URLSearchParams(window.location.search);
+  const channelId = parameters.get("play")?.trim();
+  if (channelId) {
+    return (
+      <ChannelPlayer
+        apiBase={apiBase}
+        channelId={channelId}
+        screenKey={parameters.get("screen")?.trim() || "default"}
+      />
+    );
+  }
+  return <LibraryApp apiBase={apiBase} />;
+}
+
+function LibraryApp({ apiBase }: AppProps) {
   const [activeLens, setActiveLens] = useState<Lens>("Inbox");
   const [assets, setAssets] = useState<Asset[]>([]);
   const [totalAssets, setTotalAssets] = useState(0);
@@ -484,6 +502,7 @@ export function App({ apiBase }: AppProps) {
         {activeLens === "Music" ? (
           <MusicLibrary apiBase={apiBase} onViewSource={(assetId) => void openSourceAsset(assetId)} />
         ) : null}
+        {activeLens === "Playout" ? <PlayoutDashboard apiBase={apiBase} /> : null}
         {activeLens === "Jobs" ? (
           <section aria-label="Background jobs" className="jobs-list">
             {jobs.map((job) => (

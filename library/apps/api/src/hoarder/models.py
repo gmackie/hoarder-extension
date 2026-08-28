@@ -310,6 +310,9 @@ class CuratedChannel(Base):
         cascade="all, delete-orphan",
         order_by="CuratedChannelItem.position",
     )
+    playout: Mapped["PlayoutConfiguration | None"] = relationship(
+        back_populates="channel", cascade="all, delete-orphan"
+    )
 
 
 class CuratedChannelItem(Base):
@@ -336,3 +339,71 @@ class CuratedChannelItem(Base):
     )
     channel: Mapped[CuratedChannel] = relationship(back_populates="items")
     asset: Mapped[Asset] = relationship(back_populates="channel_items")
+
+
+class PlayoutConfiguration(Base):
+    __tablename__ = "playout_configurations"
+    __table_args__ = (
+        CheckConstraint("playback_mode IN ('ordered', 'shuffle')"),
+        CheckConstraint("image_duration_seconds BETWEEN 3 AND 3600"),
+    )
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid4())
+    )
+    channel_id: Mapped[str] = mapped_column(
+        ForeignKey("curated_channels.id", ondelete="CASCADE"), unique=True, index=True
+    )
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    playback_mode: Mapped[str] = mapped_column(String(24), default="ordered")
+    loop: Mapped[bool] = mapped_column(Boolean, default=True)
+    image_duration_seconds: Mapped[int] = mapped_column(Integer, default=15)
+    item_statuses: Mapped[list[str]] = mapped_column(
+        JSON, default=lambda: ["selected", "used"]
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+    channel: Mapped[CuratedChannel] = relationship(back_populates="playout")
+    sessions: Mapped[list["PlayoutSession"]] = relationship(
+        back_populates="configuration", cascade="all, delete-orphan"
+    )
+
+
+class PlayoutSession(Base):
+    __tablename__ = "playout_sessions"
+    __table_args__ = (
+        UniqueConstraint("configuration_id", "screen_key"),
+        CheckConstraint("cycle >= 0"),
+        CheckConstraint("position_ms >= 0"),
+    )
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid4())
+    )
+    configuration_id: Mapped[str] = mapped_column(
+        ForeignKey("playout_configurations.id", ondelete="CASCADE"), index=True
+    )
+    screen_key: Mapped[str] = mapped_column(String(120))
+    current_asset_id: Mapped[str | None] = mapped_column(
+        ForeignKey("assets.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    cycle: Mapped[int] = mapped_column(Integer, default=0)
+    position_ms: Mapped[int] = mapped_column(BigInteger, default=0)
+    paused: Mapped[bool] = mapped_column(Boolean, default=False)
+    ended: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+    configuration: Mapped[PlayoutConfiguration] = relationship(
+        back_populates="sessions"
+    )
+    current_asset: Mapped[Asset | None] = relationship()

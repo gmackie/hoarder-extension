@@ -6,6 +6,8 @@ import { App } from "./App";
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
+  window.history.replaceState({}, "", "/");
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
@@ -22,10 +24,275 @@ describe("Hoarder Library navigation", () => {
       "Images",
       "Source Channels",
       "Curated Channels",
+      "Playout",
       "Jobs",
     ]) {
       expect(screen.getByRole("button", { name: label })).toBeInTheDocument();
     }
+  });
+
+  it("shows channel readiness and durable screens in the playout workspace", async () => {
+    const fetch = vi.fn((input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith("/api/playout/channels")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            items: [{
+              channel: {
+                id: "channel-1",
+                name: "Museum Television",
+                description: "Living-room loop",
+                item_count: 4,
+              },
+              configuration: {
+                id: "config-1",
+                channel_id: "channel-1",
+                enabled: true,
+                playback_mode: "ordered",
+                loop: true,
+                image_duration_seconds: 15,
+                item_statuses: ["selected", "used"],
+                eligible_item_count: 3,
+                updated_at: "2026-08-28T12:00:00Z",
+              },
+              ready: true,
+              active_screen_count: 1,
+              sessions: [{
+                id: "session-1",
+                screen_key: "living-room",
+                current_asset_id: "asset-1",
+                current_title: "A Quick Tour",
+                paused: false,
+                ended: false,
+                last_seen_at: "2026-08-28T12:00:00Z",
+              }],
+            }],
+            total: 1,
+          }),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({ items: [], total: 0 }),
+      });
+    });
+    vi.stubGlobal("fetch", fetch);
+    render(<App apiBase="http://catalog.test" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Playout" }));
+
+    expect(await screen.findByRole("heading", { name: "Museum Television" })).toBeInTheDocument();
+    expect(screen.getByText("3 programs ready")).toBeInTheDocument();
+    expect(screen.getByText("1 active screen")).toBeInTheDocument();
+    expect(screen.getByText("A Quick Tour")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Launch Museum Television" })).toHaveAttribute(
+      "href",
+      "/?play=channel-1&screen=living-room",
+    );
+  });
+
+  it("saves complete playout settings from the channel workspace", async () => {
+    const summary = {
+      channel: {
+        id: "channel-1",
+        name: "Museum Television",
+        description: "Living-room loop",
+        item_count: 4,
+      },
+      configuration: {
+        id: null,
+        channel_id: "channel-1",
+        enabled: false,
+        playback_mode: "ordered",
+        loop: true,
+        image_duration_seconds: 15,
+        item_statuses: ["selected", "used"],
+        eligible_item_count: 3,
+        updated_at: null,
+      },
+      ready: false,
+      active_screen_count: 0,
+      sessions: [],
+    };
+    const fetch = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/api/playout/channels")) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [summary], total: 1 }) });
+      }
+      if (url.endsWith("/api/curated-channels/channel-1/playout") && init?.method === "PUT") {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            ...summary.configuration,
+            enabled: true,
+            playback_mode: "shuffle",
+            image_duration_seconds: 20,
+          }),
+        });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({ items: [], total: 0 }) });
+    });
+    vi.stubGlobal("fetch", fetch);
+    render(<App apiBase="http://catalog.test" />);
+    fireEvent.click(screen.getByRole("button", { name: "Playout" }));
+    await screen.findByRole("heading", { name: "Museum Television" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Configure Museum Television" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Enable channel" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Playback order" }), {
+      target: { value: "shuffle" },
+    });
+    fireEvent.change(screen.getByRole("spinbutton", { name: "Image duration in seconds" }), {
+      target: { value: "20" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save playout" }));
+
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith(
+      "http://catalog.test/api/curated-channels/channel-1/playout",
+      expect.objectContaining({
+        method: "PUT",
+        body: JSON.stringify({
+          enabled: true,
+          playback_mode: "shuffle",
+          loop: true,
+          image_duration_seconds: 20,
+          item_statuses: ["selected", "used"],
+        }),
+      }),
+    ));
+  });
+
+  it("runs a fullscreen channel route and advances when the current video ends", async () => {
+    window.history.replaceState({}, "", "/?play=channel-1&screen=living-room");
+    const firstSession = {
+      id: "session-1",
+      channel_id: "channel-1",
+      channel_name: "Museum Television",
+      screen_key: "living-room",
+      cycle: 0,
+      position_ms: 8_000,
+      paused: false,
+      ended: false,
+      current: {
+        asset: {
+          id: "asset-1",
+          title: "A Quick Tour",
+          media_type: "video",
+          status: "available",
+          thumbnail_url: null,
+          files: [],
+        },
+        stream_url: "/api/assets/asset-1/stream",
+        display_seconds: null,
+      },
+      next: {
+        asset: {
+          id: "asset-2",
+          title: "Machine Room",
+          media_type: "video",
+          status: "available",
+          thumbnail_url: null,
+          files: [],
+        },
+        stream_url: "/api/assets/asset-2/stream",
+        display_seconds: null,
+      },
+      last_seen_at: "2026-08-28T12:00:00Z",
+    };
+    const secondSession = {
+      ...firstSession,
+      position_ms: 0,
+      current: firstSession.next,
+      next: firstSession.current,
+    };
+    const fetch = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/api/curated-channels/channel-1/playout-sessions")) {
+        return Promise.resolve({ ok: true, status: 200, json: async () => firstSession });
+      }
+      if (url.endsWith("/api/playout-sessions/session-1/advance") && init?.method === "POST") {
+        return Promise.resolve({ ok: true, json: async () => secondSession });
+      }
+      if (url.endsWith("/api/playout-sessions/session-1") && init?.method === "PATCH") {
+        return Promise.resolve({ ok: true, json: async () => firstSession });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetch);
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+    vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => undefined);
+
+    render(<App apiBase="http://catalog.test" />);
+
+    expect(await screen.findByRole("heading", { name: "A Quick Tour" })).toBeInTheDocument();
+    expect(screen.getByText("Up next: Machine Room")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Start channel" }));
+    const video = document.querySelector("video");
+    expect(video).toHaveAttribute("src", "http://catalog.test/api/assets/asset-1/stream");
+    fireEvent.loadedMetadata(video as HTMLVideoElement);
+    expect((video as HTMLVideoElement).currentTime).toBe(8);
+
+    fireEvent.ended(video as HTMLVideoElement);
+
+    expect(await screen.findByRole("heading", { name: "Machine Room" })).toBeInTheDocument();
+    expect(fetch).toHaveBeenCalledWith(
+      "http://catalog.test/api/playout-sessions/session-1/advance",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ expected_asset_id: "asset-1" }),
+      }),
+    );
+  });
+
+  it("advances image programs after their configured display duration", async () => {
+    window.history.replaceState({}, "", "/?play=channel-1&screen=gallery");
+    const imageSession = {
+      id: "session-1",
+      channel_id: "channel-1",
+      channel_name: "Gallery",
+      screen_key: "gallery",
+      cycle: 0,
+      position_ms: 0,
+      paused: false,
+      ended: false,
+      current: {
+        asset: {
+          id: "image-1",
+          title: "Poster",
+          media_type: "image",
+          status: "available",
+          thumbnail_url: null,
+          files: [],
+        },
+        stream_url: "/api/assets/image-1/stream",
+        display_seconds: 3,
+      },
+      next: null,
+      last_seen_at: "2026-08-28T12:00:00Z",
+    };
+    const fetch = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/playout-sessions")) {
+        return Promise.resolve({ ok: true, status: 201, json: async () => imageSession });
+      }
+      if (url.endsWith("/advance") && init?.method === "POST") {
+        return Promise.resolve({ ok: true, json: async () => ({ ...imageSession, ended: true, current: null }) });
+      }
+      return Promise.resolve({ ok: true, json: async () => imageSession });
+    });
+    vi.stubGlobal("fetch", fetch);
+    render(<App apiBase="http://catalog.test" />);
+    await screen.findByRole("heading", { name: "Poster" });
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByRole("button", { name: "Start channel" }));
+
+    await act(async () => { vi.advanceTimersByTime(3_000); });
+
+    expect(fetch).toHaveBeenCalledWith(
+      "http://catalog.test/api/playout-sessions/session-1/advance",
+      expect.objectContaining({ method: "POST" }),
+    );
   });
 
   it("loads the selected video lens from the catalog API", async () => {
