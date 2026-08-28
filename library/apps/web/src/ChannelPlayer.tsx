@@ -273,16 +273,18 @@ export function ChannelPlayer({ apiBase, channelId, screenKey }: ChannelPlayerPr
           <small>Starts with sound and keeps this screen awake.</small>
         </div>
       ) : null}
-      <nav aria-label="Channel controls" className="channel-controls">
-        <button onClick={togglePause} type="button">{paused ? "Resume" : "Pause"}</button>
-        <button disabled={advancing} onClick={() => void advance()} type="button">Skip</button>
-        <button onClick={() => setMuted((currentMuted) => !currentMuted)} type="button">
-          {muted ? "Unmute" : "Mute"}
-        </button>
-        <button onClick={() => setShowInfo((currentInfo) => !currentInfo)} type="button">Info</button>
-        <button onClick={() => void document.documentElement.requestFullscreen?.()} type="button">Fullscreen</button>
-        <a href="/">Library</a>
-      </nav>
+      {started ? (
+        <nav aria-label="Channel controls" className="channel-controls">
+          <button onClick={togglePause} type="button">{paused ? "Resume" : "Pause"}</button>
+          <button disabled={advancing} onClick={() => void advance()} type="button">Skip</button>
+          <button onClick={() => setMuted((currentMuted) => !currentMuted)} type="button">
+            {muted ? "Unmute" : "Mute"}
+          </button>
+          <button onClick={() => setShowInfo((currentInfo) => !currentInfo)} type="button">Info</button>
+          <button onClick={() => void document.documentElement.requestFullscreen?.()} type="button">Fullscreen</button>
+          <a href="/">Library</a>
+        </nav>
+      ) : null}
       {error ? <p className="channel-error" role="alert">{error}</p> : null}
     </main>
   );

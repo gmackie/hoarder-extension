@@ -227,6 +227,7 @@ describe("Hoarder Library navigation", () => {
 
     expect(await screen.findByRole("heading", { name: "A Quick Tour" })).toBeInTheDocument();
     expect(screen.getByText("Up next: Machine Room")).toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: "Channel controls" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Start channel" }));
     await waitFor(() => expect(fetch).toHaveBeenCalledWith(
       "http://catalog.test/api/playout-sessions/session-1",
@@ -239,6 +240,7 @@ describe("Hoarder Library navigation", () => {
         }),
       }),
     ));
+    expect(screen.getByRole("navigation", { name: "Channel controls" })).toBeInTheDocument();
     const video = document.querySelector("video");
     expect(video).toHaveAttribute("src", "http://catalog.test/api/assets/asset-1/stream");
     fireEvent.loadedMetadata(video as HTMLVideoElement);
