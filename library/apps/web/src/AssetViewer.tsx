@@ -17,6 +17,14 @@ export type Asset = {
   thumbnail_url?: string | null;
   editorial?: EditorialState;
   files: Array<{ id: number; relative_path: string; size: number }>;
+  origins?: Array<{
+    source_url: string;
+    page_url: string;
+    page_title: string;
+    original_filename: string;
+    destination: string;
+    captured_at: string;
+  }>;
 };
 
 type CuratedChannelSummary = {
@@ -382,6 +390,36 @@ export function AssetViewer({
               </div>
             </form>
 
+            {asset.media_type === "image" && asset.origins?.length ? (
+              <section aria-label="Image provenance" className="image-provenance">
+                <div className="editorial-heading">
+                  <div>
+                    <span>Provenance</span>
+                    <strong>Saved from the browser</strong>
+                  </div>
+                </div>
+                {asset.origins.map((origin) => (
+                  <article key={`${origin.destination}:${origin.page_url}:${origin.source_url}`}>
+                    <div>
+                      <span>Source page</span>
+                      {origin.page_url ? (
+                        <a href={origin.page_url} rel="noreferrer" target="_blank">
+                          {origin.page_title || "Source page"}
+                        </a>
+                      ) : <strong>{origin.page_title || "Unknown page"}</strong>}
+                    </div>
+                    <div><span>Destination</span><strong>{formatDestination(origin.destination)}</strong></div>
+                    <div><span>Original name</span><strong>{origin.original_filename || "Unknown"}</strong></div>
+                    {origin.source_url ? (
+                      <a href={origin.source_url} rel="noreferrer" target="_blank">
+                        Original image URL
+                      </a>
+                    ) : null}
+                  </article>
+                ))}
+              </section>
+            ) : null}
+
             <div className="channel-assignment">
               <label>
                 Curated channel
@@ -485,4 +523,12 @@ function parseTimecode(value: string): number {
   const seconds = parts.reduce((total, part) => total * 60 + Number(part), 0);
   if (!Number.isFinite(seconds) || seconds < 0) throw new Error("Invalid time range");
   return Math.round(seconds * 1000);
+}
+
+function formatDestination(value: string): string {
+  const normalized = value
+    .split(/[-_]+/)
+    .filter(Boolean)
+    .join(" ");
+  return normalized ? `${normalized[0].toUpperCase()}${normalized.slice(1)}` : "Unknown";
 }

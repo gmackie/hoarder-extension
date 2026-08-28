@@ -155,12 +155,18 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     const blob = await response.blob();
     const filename =
       info.srcUrl.split("/").pop().split("?")[0] || "image.png";
-    const ok = await uploadImage(blob, filename, {
+    const result = await uploadImage(blob, filename, {
       sourceUrl: info.srcUrl,
+      pageUrl: tab.url || "",
       pageTitle: tab.title || "",
       tags,
     });
-    showNotification(ok ? "Saved!" : "Save failed");
+    const message = result.ok
+      ? result.status === "duplicate"
+        ? "Already in library"
+        : "Saved to library"
+      : `Save failed: ${result.error}`;
+    showNotification(message);
   } catch (error) {
     showNotification(`Save failed: ${error.message}`);
   }

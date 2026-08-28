@@ -23,11 +23,13 @@ services:
     environment:
       HOARDER_DATABASE_URL: postgresql+psycopg://hoarder:${HOARDER_DB_PASSWORD:-local-development-only}@db:5432/hoarder
       HOARDER_DERIVATIVE_ROOT: /data/derivatives
-      HOARDER_STORAGE_ROOTS: '${HOARDER_STORAGE_ROOTS:-[{"key":"primary","label":"Primary archive","path":"/media/primary","sentinel":".hoarder-root"},{"key":"secondary","label":"Secondary archive","path":"/media/secondary","sentinel":".hoarder-root"}]}'
+      HOARDER_IMAGE_UPLOAD_MAX_BYTES: ${HOARDER_IMAGE_UPLOAD_MAX_BYTES:-26214400}
+      HOARDER_STORAGE_ROOTS: '${HOARDER_STORAGE_ROOTS:-[{"key":"primary","label":"Primary archive","path":"/media/primary","sentinel":".hoarder-root"},{"key":"secondary","label":"Secondary archive","path":"/media/secondary","sentinel":".hoarder-root"},{"key":"saved-images","label":"Saved images","path":"/media/saved-images","writable":true,"accepts_images":true}]}'
     volumes:
       - ${HOARDER_MEDIA_ROOT_1:-./library/dev-media/primary}:/media/primary:ro
       - ${HOARDER_MEDIA_ROOT_2:-./library/dev-media/secondary}:/media/secondary:ro
       - ${HOARDER_DERIVATIVE_DATA:-hoarder-derivatives}:/data/derivatives
+      - ${HOARDER_IMAGE_DATA:-hoarder-images}:/media/saved-images
     depends_on:
       db:
         condition: service_healthy
@@ -52,3 +54,4 @@ services:
 volumes:
   hoarder-db:
   hoarder-derivatives:
+  hoarder-images:

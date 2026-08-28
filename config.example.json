@@ -12,9 +12,9 @@
       "tubeArchivistUrl": "",
       "tubeArchivistApiKey": "",
       "useTubeArchivistForYouTube": false,
-      "imageApiUrl": "",
-      "imageDestination": "",
-      "availabilityId": ""
+      "imageApiUrl": "https://library.example.com",
+      "imageDestination": "saved-images",
+      "availabilityId": "saved-images"
     }
   ]
 }

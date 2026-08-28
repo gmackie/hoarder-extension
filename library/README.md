@@ -22,6 +22,8 @@ This first vertical slice includes:
 - Atomic, FFprobe-validated M4A, Opus, and FLAC derivatives in writable storage.
 - A first-class music catalog with artists, releases, tracks, tags, artwork,
   source-video lineage, ranged playback, editing, filters, and safe deletion.
+- Managed browser-image destinations with decoded-content validation, atomic
+  writes, content deduplication, normalized tags, and source-page provenance.
 - Durable scan-job history.
 - A responsive PWA with Inbox, Videos, Music, Images, Source Channels,
   Curated Channels, and Jobs navigation.
@@ -52,6 +54,9 @@ or `0.0.0.0` when access from every host interface is intentional.
 persistent storage.
 `HOARDER_DERIVATIVE_DATA` likewise selects writable persistent storage for
 generated audio. It must be separate from the read-only original media roots.
+`HOARDER_IMAGE_DATA` selects writable managed storage for browser images, and
+`HOARDER_IMAGE_UPLOAD_MAX_BYTES` sets the request limit. The corresponding
+storage-root entry must set both `writable` and `accepts_images` to `true`.
 
 The sentinel prevents an unavailable network mount from looking like an empty
 directory and incorrectly transitioning catalog items to missing.
@@ -226,9 +231,10 @@ HOARDER_BIND_ADDRESS=100.x.y.z
 HOARDER_PORT=8088
 HOARDER_DB_DATA=/persistent/apps/hoarder-library/postgres
 HOARDER_DERIVATIVE_DATA=/persistent/apps/hoarder-library/derivatives
+HOARDER_IMAGE_DATA=/persistent/apps/hoarder-library/images
 HOARDER_MEDIA_ROOT_1=/local/archive
 HOARDER_MEDIA_ROOT_2=/mounted/secondary-archive
-HOARDER_STORAGE_ROOTS=[{"key":"local","label":"Local NAS","path":"/media/primary","sentinel":".hoarder-root"},{"key":"secondary","label":"Secondary NAS","path":"/media/secondary","sentinel":".hoarder-root"}]
+HOARDER_STORAGE_ROOTS=[{"key":"local","label":"Local NAS","path":"/media/primary","sentinel":".hoarder-root"},{"key":"secondary","label":"Secondary NAS","path":"/media/secondary","sentinel":".hoarder-root"},{"key":"saved-images","label":"Saved images","path":"/media/saved-images","writable":true,"accepts_images":true}]
 ```
 
 Generate a unique `HOARDER_DB_PASSWORD`, protect `.env` with mode `0600`, and
@@ -276,6 +282,9 @@ Vite proxies `/api` to `http://127.0.0.1:8000` during development.
 ## Safety model
 
 - Media roots are mounted read-only in Compose.
+- Browser images are the only originals written by the catalog, and only to
+  roots explicitly marked writable and image-capable. Validation and duplicate
+  detection happen before an atomic content-addressed activation.
 - The scanner never deletes or renames originals.
 - A root must be online before absent files can become missing.
 - A missing sentinel produces `degraded`, not `online`.

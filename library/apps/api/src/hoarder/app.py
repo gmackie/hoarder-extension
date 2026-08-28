@@ -4,13 +4,29 @@ from collections.abc import AsyncIterator, Mapping, Sequence
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Literal
+from urllib.parse import urlparse
 
-from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Query, status
-from fastapi.responses import FileResponse, Response, StreamingResponse
+from fastapi import (
+    BackgroundTasks,
+    FastAPI,
+    File,
+    Form,
+    Header,
+    HTTPException,
+    Query,
+    UploadFile,
+    status,
+)
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import create_engine
 
 from .catalog import Catalog
+from .image_ingest import (
+    InvalidImageError,
+    UnsupportedImageMediaTypeError,
+    validate_image,
+)
 
 WorkflowState = Literal["inbox", "candidate", "reviewed", "selected", "archived"]
 ChannelItemStatus = Literal["candidate", "reviewed", "selected", "used", "rejected"]
@@ -145,9 +161,15 @@ def create_app(
     database_url: str,
     storage_roots: Sequence[Mapping[str, Any]],
     derivative_root: str | Path = "./data/derivatives",
+    image_upload_max_bytes: int = 25 * 1024 * 1024,
 ) -> FastAPI:
     engine = create_engine(database_url)
-    catalog = Catalog(engine, storage_roots, Path(derivative_root))
+    catalog = Catalog(
+        engine,
+        storage_roots,
+        Path(derivative_root),
+        image_upload_max_bytes=image_upload_max_bytes,
+    )
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -164,6 +186,70 @@ def create_app(
         engine.dispose()
 
     app = FastAPI(title="Hoarder Library", lifespan=lifespan)
+
+    @app.get("/destinations")
+    def image_destinations() -> dict[str, Any]:
+        return {"destinations": catalog.list_image_destinations()}
+
+    @app.post("/upload")
+    async def upload_image(
+        image: UploadFile = File(...),
+        destination: str = Form(default="", max_length=80),
+        source_url: str = Form(default="", max_length=4096),
+        page_url: str = Form(default="", max_length=4096),
+        page_title: str = Form(default="", max_length=1024),
+        tags: str = Form(default="", max_length=8192),
+    ) -> JSONResponse:
+        if not destination:
+            configured_destinations = catalog.list_image_destinations()
+            if len(configured_destinations) != 1:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Choose an image destination",
+                )
+            destination = str(configured_destinations[0]["id"])
+        for supplied_url in (source_url, page_url):
+            if supplied_url and urlparse(supplied_url).scheme not in {"http", "https"}:
+                raise HTTPException(status_code=422, detail="Source URLs must use HTTP or HTTPS")
+        if image.content_type is None:
+            raise HTTPException(status_code=415, detail="Unsupported image media type")
+        content = await image.read(catalog.image_upload_max_bytes + 1)
+        await image.close()
+        if len(content) > catalog.image_upload_max_bytes:
+            raise HTTPException(
+                status_code=413, detail="Image exceeds the configured size limit"
+            )
+        try:
+            validated = validate_image(content, image.content_type)
+        except UnsupportedImageMediaTypeError as error:
+            raise HTTPException(
+                status_code=415, detail="Unsupported image media type"
+            ) from error
+        except InvalidImageError as error:
+            raise HTTPException(
+                status_code=422, detail="Uploaded content is not a valid image"
+            ) from error
+        result, ingest_error = catalog.ingest_image(
+            destination_key=destination,
+            content=content,
+            extension=validated.extension,
+            filename=image.filename or "saved-image",
+            source_url=source_url,
+            page_url=page_url,
+            page_title=page_title,
+            tags=tags.split(","),
+        )
+        if ingest_error == "not_found":
+            raise HTTPException(status_code=404, detail="Image destination was not found")
+        if ingest_error == "unavailable":
+            raise HTTPException(
+                status_code=503, detail="Image destination is unavailable"
+            )
+        assert result is not None
+        return JSONResponse(
+            result,
+            status_code=201 if result["status"] == "saved" else 200,
+        )
 
     @app.post("/api/scans", status_code=status.HTTP_202_ACCEPTED)
     def scan(background_tasks: BackgroundTasks) -> dict[str, Any]:

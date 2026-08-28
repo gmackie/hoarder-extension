@@ -46,6 +46,14 @@ describe("AssetViewer", () => {
       title: "Saved reference",
       media_type: "image",
       files: [{ id: 2, relative_path: "Saved reference.png", size: 1024 }],
+      origins: [{
+        source_url: "https://images.example.test/reference.png",
+        page_url: "https://example.test/exhibits/museum",
+        page_title: "Museum exhibit",
+        original_filename: "reference.png",
+        destination: "saved-images",
+        captured_at: "2026-08-27T22:00:00Z",
+      }],
     };
 
     render(<AssetViewer apiBase="" asset={image} onClose={() => {}} />);
@@ -54,6 +62,16 @@ describe("AssetViewer", () => {
       "src",
       "/api/assets/image-1/stream",
     );
+    expect(screen.getByRole("link", { name: "Museum exhibit" })).toHaveAttribute(
+      "href",
+      "https://example.test/exhibits/museum",
+    );
+    expect(screen.getByRole("link", { name: "Original image URL" })).toHaveAttribute(
+      "href",
+      "https://images.example.test/reference.png",
+    );
+    expect(screen.getByText("Saved images")).toBeInTheDocument();
+    expect(screen.getByText("reference.png")).toBeInTheDocument();
   });
 
   it("edits evaluation metadata and assigns the asset to a curated channel", async () => {

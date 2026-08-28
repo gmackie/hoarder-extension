@@ -7,6 +7,8 @@ class StorageRootSettings(BaseModel):
     label: str
     path: str
     sentinel: str | None = None
+    writable: bool = False
+    accepts_images: bool = False
     exclude_patterns: list[str] = Field(default_factory=list)
     thumbnail_patterns: list[str] = Field(default_factory=list)
     channel_path_prefixes: list[str] = Field(default_factory=list)
@@ -19,5 +21,6 @@ class Settings(BaseSettings):
 
     database_url: str = "sqlite:///./data/catalog.db"
     derivative_root: str = "./data/derivatives"
+    image_upload_max_bytes: int = Field(default=25 * 1024 * 1024, ge=1)
     storage_roots: list[StorageRootSettings] = Field(default_factory=list)
     web_dist: str | None = None

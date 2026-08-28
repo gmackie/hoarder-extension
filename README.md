@@ -39,9 +39,9 @@ checksummed release in a stable per-user directory:
 
 ```sh
 curl -fsSLo install-hoarder.sh \
-  https://raw.githubusercontent.com/gmackie/hoarder-extension/v1.0.12/scripts/install-macos.sh
+  https://raw.githubusercontent.com/gmackie/hoarder-extension/v1.0.13/scripts/install-macos.sh
 sh install-hoarder.sh \
-  --version 1.0.12 \
+  --version 1.0.13 \
   --enable-auto-update
 ```
 
@@ -80,7 +80,7 @@ The updater is configurable for other users and forks:
 
 ```sh
 sh install-hoarder.sh \
-  --version 1.0.12 \
+  --version 1.0.13 \
   --enable-auto-update \
   --repository owner/hoarder-extension \
   --release-base-url https://github.com/owner/hoarder-extension/releases/download \
@@ -129,7 +129,7 @@ Only the target name and the services you use need values.
 | MeTube folder | Optional folder below MeTube's `/downloads` directory. |
 | TubeArchivist URL and API key | Optional YouTube-specific downloader. |
 | Use TubeArchivist for YouTube | Routes recognized YouTube URLs to TubeArchivist. |
-| Image API URL | Optional API implementing `POST /upload`. |
+| Image API URL | Optional Hoarder Library origin or compatible API implementing `POST /upload`. |
 | Image destination key | Optional `destination` form value sent to the image API. |
 | Availability destination id | Optional id checked through `GET /destinations` before saving. |
 
@@ -190,9 +190,10 @@ for the authoritative server-side semantics.
 
 ## Image API contract
 
-Image support is optional. The configured API must accept `POST /upload` as
-multipart form data with `image`, `source_url`, `page_title`, optional `tags`,
-and optional `destination` fields.
+Image support is optional. Hoarder Library implements the extension contract
+directly, so its public origin can be used as the Image API URL. The API accepts
+`POST /upload` as multipart form data with `image`, `source_url`, `page_url`,
+`page_title`, optional `tags`, and `destination` fields.
 
 When an availability id is configured, `GET /destinations` must return:
 
@@ -205,6 +206,10 @@ When an availability id is configured, `GET /destinations` must return:
 ```
 
 The extension refuses the save when the requested destination is unavailable.
+Successful responses include `asset_id`, `status` (`saved` or `duplicate`),
+`destination`, and `asset_url`. The extension reports duplicates without
+writing another copy. Compatible third-party APIs may omit these response
+fields, but cannot provide catalog navigation or duplicate feedback.
 
 ## Privacy and permissions
 

@@ -450,4 +450,63 @@ describe("extension installation", () => {
       tabId: 61,
     });
   });
+
+  it("reports duplicate image saves and sends the source page to the catalog", async () => {
+    globalThis.chrome.storage = {
+      local: {
+        get: vi.fn(async () => ({
+          activeTargetId: "home",
+          targets: [{
+            id: "home",
+            name: "Home",
+            imageApiUrl: "https://catalog.example.test",
+            imageDestination: "saved-images",
+          }],
+        })),
+        set: vi.fn(async () => {}),
+      },
+    };
+    globalThis.chrome.notifications = { create: vi.fn() };
+    globalThis.fetch = vi.fn(async (url) => {
+      if (url === "https://images.example.test/reference.png") {
+        return { blob: async () => new Blob(["image"], { type: "image/png" }) };
+      }
+      if (url.endsWith("/destinations")) {
+        return jsonResponse({
+          destinations: [{ id: "home", available: true }],
+        });
+      }
+      if (url.endsWith("/upload")) {
+        return jsonResponse({
+          asset_id: "image-123",
+          status: "duplicate",
+          asset_url: "/api/assets/image-123",
+        });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    await import("../src/background.js");
+    const clickHandler =
+      globalThis.chrome.contextMenus.onClicked.addListener.mock.calls[0][0];
+
+    await clickHandler(
+      {
+        menuItemId: "save-to-archive",
+        srcUrl: "https://images.example.test/reference.png",
+      },
+      {
+        id: 72,
+        title: "Museum exhibit",
+        url: "https://example.test/exhibits/museum",
+      },
+    );
+
+    const uploadCall = globalThis.fetch.mock.calls.find(([url]) => url.endsWith("/upload"));
+    expect(uploadCall[1].body.get("page_url")).toBe(
+      "https://example.test/exhibits/museum",
+    );
+    expect(globalThis.chrome.notifications.create).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "Already in library" }),
+    );
+  });
 });

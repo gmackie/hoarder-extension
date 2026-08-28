@@ -1,5 +1,7 @@
 import json
 import hashlib
+import os
+import tempfile
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from fnmatch import fnmatchcase
@@ -16,6 +18,7 @@ from .models import (
     Asset,
     AssetEditorial,
     AssetFile,
+    AssetOrigin,
     Base,
     CuratedChannel,
     CuratedChannelItem,
@@ -56,10 +59,15 @@ class Catalog:
         engine: Engine,
         storage_roots: Sequence[Mapping[str, Any]],
         derivative_root: Path,
+        image_upload_max_bytes: int = 25 * 1024 * 1024,
     ) -> None:
         self.engine = engine
         self.storage_roots = storage_roots
         self.audio_extractor = AudioExtractor(derivative_root)
+        self.image_upload_max_bytes = image_upload_max_bytes
+        self.root_config_by_key = {
+            str(root["key"]): root for root in storage_roots
+        }
         self.exclude_patterns = {
             str(root["key"]): tuple(
                 str(pattern) for pattern in root.get("exclude_patterns", [])
@@ -122,6 +130,10 @@ class Catalog:
                         if configured.get("sentinel")
                         else None
                     )
+                root.writable = bool(configured.get("writable", False))
+                root.accepts_images = bool(
+                    configured.get("accepts_images", False)
+                )
             session.commit()
 
     def queue_scan(self) -> str:
@@ -297,6 +309,7 @@ class Catalog:
                     selectinload(Asset.files).selectinload(AssetFile.root),
                     selectinload(Asset.editorial),
                     selectinload(Asset.tags),
+                    selectinload(Asset.origins),
                 )
             )
             if media_type is not None:
@@ -370,6 +383,17 @@ class Catalog:
                 }
                 for asset_file in asset.files
             ],
+            "origins": [
+                {
+                    "source_url": origin.source_url,
+                    "page_url": origin.page_url,
+                    "page_title": origin.page_title,
+                    "original_filename": origin.original_filename,
+                    "destination": origin.destination,
+                    "captured_at": origin.captured_at.isoformat(),
+                }
+                for origin in asset.origins
+            ],
         }
 
     def get_asset(self, asset_id: str) -> dict[str, Any] | None:
@@ -381,6 +405,7 @@ class Catalog:
                     selectinload(Asset.files).selectinload(AssetFile.root),
                     selectinload(Asset.editorial),
                     selectinload(Asset.tags),
+                    selectinload(Asset.origins),
                 )
             )
             return self._serialize_asset(asset) if asset is not None else None
@@ -466,6 +491,212 @@ class Catalog:
     def _normalize_tag(value: str) -> str:
         return " ".join(value.strip().casefold().split())[:120]
 
+    def list_image_destinations(self) -> list[dict[str, Any]]:
+        destinations = []
+        for configured in self.storage_roots:
+            if not configured.get("accepts_images", False):
+                continue
+            path = Path(str(configured["path"]))
+            destinations.append(
+                {
+                    "id": str(configured["key"]),
+                    "label": str(configured["label"]),
+                    "available": bool(
+                        configured.get("writable", False)
+                        and path.is_dir()
+                        and os.access(path, os.W_OK)
+                    ),
+                }
+            )
+        return destinations
+
+    def ingest_image(
+        self,
+        *,
+        destination_key: str,
+        content: bytes,
+        extension: str,
+        filename: str,
+        source_url: str,
+        page_url: str,
+        page_title: str,
+        tags: Sequence[str],
+    ) -> tuple[dict[str, Any] | None, str | None]:
+        configured = self.root_config_by_key.get(destination_key)
+        if configured is None or not configured.get("accepts_images", False):
+            return None, "not_found"
+        root_path = Path(str(configured["path"]))
+        if (
+            not configured.get("writable", False)
+            or not root_path.is_dir()
+            or not os.access(root_path, os.W_OK)
+        ):
+            return None, "unavailable"
+
+        fingerprint_digest = hashlib.sha256()
+        fingerprint_digest.update(
+            len(content).to_bytes(8, byteorder="big", signed=False)
+        )
+        fingerprint_digest.update(content)
+        fingerprint = fingerprint_digest.hexdigest()
+        safe_filename = Path(filename.replace("\\", "/")).name[:1024]
+        title = Path(safe_filename).stem.strip()[:1024] or "Saved image"
+        normalized_names = sorted(
+            {
+                normalized
+                for value in tags
+                if (normalized := self._normalize_tag(value))
+            }
+        )
+
+        with Session(self.engine) as session:
+            duplicate_file = session.scalar(
+                select(AssetFile)
+                .join(Asset)
+                .where(
+                    AssetFile.fingerprint == fingerprint,
+                    Asset.media_type == "image",
+                )
+                .options(
+                    selectinload(AssetFile.asset).selectinload(Asset.origins),
+                    selectinload(AssetFile.asset).selectinload(Asset.tags),
+                )
+                .limit(1)
+            )
+            if duplicate_file is not None:
+                asset = duplicate_file.asset
+                self._record_origin(
+                    asset,
+                    destination_key=destination_key,
+                    source_url=source_url,
+                    page_url=page_url,
+                    page_title=page_title,
+                    filename=safe_filename,
+                )
+                asset.tags = self._merge_tags(session, asset.tags, normalized_names)
+                asset.status = "available"
+                session.commit()
+                return {
+                    "asset_id": asset.id,
+                    "status": "duplicate",
+                    "destination": destination_key,
+                    "asset_url": f"/api/assets/{asset.id}",
+                }, None
+
+            root = session.scalar(
+                select(StorageRoot).where(StorageRoot.key == destination_key)
+            )
+            if root is None:
+                return None, "not_found"
+            relative_path = f"images/{fingerprint[:2]}/{fingerprint}{extension}"
+            final_path = (root_path / relative_path).resolve()
+            if not final_path.is_relative_to(root_path.resolve()):
+                return None, "unavailable"
+            final_path.parent.mkdir(parents=True, exist_ok=True)
+            temporary_path: Path | None = None
+            created_file = False
+            try:
+                if not final_path.exists():
+                    with tempfile.NamedTemporaryFile(
+                        mode="wb",
+                        dir=final_path.parent,
+                        prefix=".upload-",
+                        suffix=".part",
+                        delete=False,
+                    ) as temporary:
+                        temporary.write(content)
+                        temporary.flush()
+                        os.fsync(temporary.fileno())
+                        temporary_path = Path(temporary.name)
+                    os.replace(temporary_path, final_path)
+                    temporary_path = None
+                    created_file = True
+                stat = final_path.stat()
+                if stat.st_size != len(content):
+                    return None, "unavailable"
+                asset = Asset(title=title, media_type="image")
+                asset.files.append(
+                    AssetFile(
+                        root=root,
+                        relative_path=relative_path,
+                        size=stat.st_size,
+                        mtime_ns=stat.st_mtime_ns,
+                        fingerprint=fingerprint,
+                    )
+                )
+                self._record_origin(
+                    asset,
+                    destination_key=destination_key,
+                    source_url=source_url,
+                    page_url=page_url,
+                    page_title=page_title,
+                    filename=safe_filename,
+                )
+                session.add(asset)
+                asset.tags = self._merge_tags(session, [], normalized_names)
+                root.health = "online"
+                session.commit()
+                return {
+                    "asset_id": asset.id,
+                    "status": "saved",
+                    "destination": destination_key,
+                    "asset_url": f"/api/assets/{asset.id}",
+                }, None
+            except Exception:
+                session.rollback()
+                if created_file:
+                    final_path.unlink(missing_ok=True)
+                raise
+            finally:
+                if temporary_path is not None:
+                    temporary_path.unlink(missing_ok=True)
+
+    @staticmethod
+    def _record_origin(
+        asset: Asset,
+        *,
+        destination_key: str,
+        source_url: str,
+        page_url: str,
+        page_title: str,
+        filename: str,
+    ) -> None:
+        if any(
+            origin.source_url == source_url
+            and origin.page_url == page_url
+            and origin.destination == destination_key
+            for origin in asset.origins
+        ):
+            return
+        asset.origins.append(
+            AssetOrigin(
+                source_url=source_url,
+                page_url=page_url,
+                page_title=page_title,
+                original_filename=filename,
+                destination=destination_key,
+            )
+        )
+
+    @staticmethod
+    def _merge_tags(
+        session: Session, existing: Sequence[Tag], normalized_names: Sequence[str]
+    ) -> list[Tag]:
+        all_names = sorted({tag.name for tag in existing} | set(normalized_names))
+        if not all_names:
+            return []
+        tags_by_name = {
+            tag.name: tag
+            for tag in session.scalars(select(Tag).where(Tag.name.in_(all_names))).all()
+        }
+        for name in all_names:
+            if name not in tags_by_name:
+                tag = Tag(name=name)
+                session.add(tag)
+                session.flush()
+                tags_by_name[name] = tag
+        return [tags_by_name[name] for name in all_names]
+
     def list_curated_channels(self) -> list[dict[str, Any]]:
         with Session(self.engine) as session:
             channels = session.scalars(
@@ -546,6 +777,7 @@ class Catalog:
                     selectinload(Asset.files).selectinload(AssetFile.root),
                     selectinload(Asset.editorial),
                     selectinload(Asset.tags),
+                    selectinload(Asset.origins),
                 )
             )
             if channel is None or asset is None:
@@ -629,6 +861,7 @@ class Catalog:
                 .selectinload(AssetFile.root),
                 selectinload(CuratedChannelItem.asset).selectinload(Asset.editorial),
                 selectinload(CuratedChannelItem.asset).selectinload(Asset.tags),
+                selectinload(CuratedChannelItem.asset).selectinload(Asset.origins),
             )
             .order_by(CuratedChannelItem.position)
         )

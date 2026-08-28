@@ -29,6 +29,8 @@ class StorageRoot(Base):
     path: Mapped[str] = mapped_column(String(2048))
     sentinel: Mapped[str | None] = mapped_column(String(255), nullable=True)
     health: Mapped[str] = mapped_column(String(24), default="unknown")
+    writable: Mapped[bool] = mapped_column(Boolean, default=False)
+    accepts_images: Mapped[bool] = mapped_column(Boolean, default=False)
     files: Mapped[list["AssetFile"]] = relationship(back_populates="root")
 
 
@@ -56,6 +58,11 @@ class Asset(Base):
     channel_items: Mapped[list["CuratedChannelItem"]] = relationship(
         back_populates="asset", cascade="all, delete-orphan"
     )
+    origins: Mapped[list["AssetOrigin"]] = relationship(
+        back_populates="asset",
+        cascade="all, delete-orphan",
+        order_by="AssetOrigin.captured_at",
+    )
 
 
 class AssetFile(Base):
@@ -71,6 +78,27 @@ class AssetFile(Base):
     fingerprint: Mapped[str] = mapped_column(String(64), index=True)
     asset: Mapped[Asset] = relationship(back_populates="files")
     root: Mapped[StorageRoot] = relationship(back_populates="files")
+
+
+class AssetOrigin(Base):
+    __tablename__ = "asset_origins"
+    __table_args__ = (
+        UniqueConstraint("asset_id", "source_url", "page_url", "destination"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    asset_id: Mapped[str] = mapped_column(
+        ForeignKey("assets.id", ondelete="CASCADE"), index=True
+    )
+    source_url: Mapped[str] = mapped_column(String(4096), default="")
+    page_url: Mapped[str] = mapped_column(String(4096), default="")
+    page_title: Mapped[str] = mapped_column(String(1024), default="")
+    original_filename: Mapped[str] = mapped_column(String(1024), default="")
+    destination: Mapped[str] = mapped_column(String(80))
+    captured_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+    asset: Mapped[Asset] = relationship(back_populates="origins")
 
 
 class Job(Base):
