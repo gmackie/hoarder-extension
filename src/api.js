@@ -194,12 +194,13 @@ export async function uploadImage(imageBlob, filename, metadata) {
   const config = await getConfig();
   const target = getActiveTarget(config);
   if (!target?.imageApiUrl || !(await checkTargetAvailability(target))) {
-    return false;
+    return { ok: false, error: "Image archive is unavailable" };
   }
 
   const form = new FormData();
   form.append("image", imageBlob, filename);
   form.append("source_url", metadata.sourceUrl || "");
+  form.append("page_url", metadata.pageUrl || "");
   form.append("page_title", metadata.pageTitle || "");
   if (target.imageDestination) {
     form.append("destination", target.imageDestination);
@@ -212,7 +213,21 @@ export async function uploadImage(imageBlob, filename, metadata) {
     method: "POST",
     body: form,
   });
-  return response.ok;
+  const body = await response
+    .json()
+    .catch(() => null);
+  if (!response.ok) {
+    return {
+      ok: false,
+      error: body?.detail || `Image upload failed (${response.status})`,
+    };
+  }
+  return {
+    ok: true,
+    assetId: body?.asset_id || null,
+    status: body?.status || "saved",
+    assetUrl: body?.asset_url || null,
+  };
 }
 
 export function isDuplicateDownload(history, url, folder = "") {
