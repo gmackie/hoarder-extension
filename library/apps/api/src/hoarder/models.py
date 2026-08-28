@@ -395,7 +395,7 @@ class PlayoutSession(Base):
     )
     cycle: Mapped[int] = mapped_column(Integer, default=0)
     position_ms: Mapped[int] = mapped_column(BigInteger, default=0)
-    paused: Mapped[bool] = mapped_column(Boolean, default=False)
+    paused: Mapped[bool] = mapped_column(Boolean, default=True)
     ended: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC)

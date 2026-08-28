@@ -98,6 +98,30 @@ export function ChannelPlayer({ apiBase, channelId, screenKey }: ChannelPlayerPr
     }
   }, [advancing, apiBase, refresh, session]);
 
+  const persistPlaybackState = useCallback(async (
+    nextPaused: boolean,
+    positionMs?: number,
+  ) => {
+    if (!session?.current) return;
+    const media = mediaRef.current;
+    const resolvedPosition = positionMs ?? (
+      media ? Math.max(0, Math.round(media.currentTime * 1000)) : session.position_ms
+    );
+    const response = await fetch(
+      `${apiBase}/api/playout-sessions/${encodeURIComponent(session.id)}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          expected_asset_id: session.current.asset.id,
+          position_ms: resolvedPosition,
+          paused: nextPaused,
+        }),
+      },
+    );
+    if (response.status === 409) await refresh(session.id);
+  }, [apiBase, refresh, session]);
+
   useEffect(() => {
     if (!started || paused || session?.current?.asset.media_type !== "image") return;
     const elapsed = Math.min(
@@ -114,24 +138,10 @@ export function ChannelPlayer({ apiBase, channelId, screenKey }: ChannelPlayerPr
   useEffect(() => {
     if (!started || !session?.current) return;
     const heartbeat = window.setInterval(() => {
-      const media = mediaRef.current;
-      const positionMs = media
-        ? Math.max(0, Math.round(media.currentTime * 1000))
-        : session.position_ms;
-      void fetch(`${apiBase}/api/playout-sessions/${encodeURIComponent(session.id)}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          expected_asset_id: session.current?.asset.id,
-          position_ms: positionMs,
-          paused,
-        }),
-      }).then((response) => {
-        if (response.status === 409) void refresh(session.id);
-      });
+      void persistPlaybackState(paused);
     }, 10_000);
     return () => window.clearInterval(heartbeat);
-  }, [apiBase, paused, refresh, session, started]);
+  }, [paused, persistPlaybackState, session, started]);
 
   useEffect(() => {
     if (!started || paused) return;
@@ -166,17 +176,21 @@ export function ChannelPlayer({ apiBase, channelId, screenKey }: ChannelPlayerPr
   }, [started]);
 
   function start() {
+    if (!session) return;
     setStarted(true);
     setPaused(false);
     setError(null);
+    void persistPlaybackState(false, session.position_ms);
   }
 
   function togglePause() {
     const media = mediaRef.current;
     setPaused((current) => {
-      if (current) void media?.play();
-      else media?.pause();
-      return !current;
+      const nextPaused = !current;
+      if (nextPaused) media?.pause();
+      else void media?.play();
+      void persistPlaybackState(nextPaused);
+      return nextPaused;
     });
   }
 

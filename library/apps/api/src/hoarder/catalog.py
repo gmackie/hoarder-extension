@@ -1034,7 +1034,6 @@ class Catalog:
             ):
                 playout_session.current_asset_id = items[0].asset_id
                 playout_session.position_ms = 0
-                playout_session.paused = False
                 playout_session.ended = False
             playout_session.last_seen_at = datetime.now(UTC)
             result = self._serialize_playout_session(

@@ -228,6 +228,17 @@ describe("Hoarder Library navigation", () => {
     expect(await screen.findByRole("heading", { name: "A Quick Tour" })).toBeInTheDocument();
     expect(screen.getByText("Up next: Machine Room")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Start channel" }));
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith(
+      "http://catalog.test/api/playout-sessions/session-1",
+      expect.objectContaining({
+        method: "PATCH",
+        body: JSON.stringify({
+          expected_asset_id: "asset-1",
+          position_ms: 8_000,
+          paused: false,
+        }),
+      }),
+    ));
     const video = document.querySelector("video");
     expect(video).toHaveAttribute("src", "http://catalog.test/api/assets/asset-1/stream");
     fireEvent.loadedMetadata(video as HTMLVideoElement);

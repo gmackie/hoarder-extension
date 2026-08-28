@@ -65,6 +65,7 @@ def test_playout_session_resumes_and_advances_without_mutating_editorial_order(
         assert started.status_code == 201
         session = started.json()
         assert session["screen_key"] == "living-room"
+        assert session["paused"] is True
         assert session["current"]["asset"]["title"] == "First Film"
         assert session["next"]["asset"]["title"] == "Second Film"
         assert session["current"]["stream_url"].endswith(
