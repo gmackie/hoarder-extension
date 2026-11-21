@@ -1,0 +1,9 @@
+.git
+.env
+node_modules
+dist
+web-ext-artifacts
+**/.pytest_cache
+**/.venv
+**/__pycache__
+**/*.pyc

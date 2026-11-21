@@ -235,13 +235,58 @@ describe("uploadImage", () => {
   });
 
   it("uploads to the active target's API and destination key", async () => {
-    await uploadImage(new Blob(["image"]), "image.png", {
+    globalThis.fetch = vi.fn(async (url) => {
+      if (url.endsWith("/upload")) {
+        return jsonResponse({
+          asset_id: "asset-123",
+          status: "saved",
+          asset_url: "/api/assets/asset-123",
+        }, 201);
+      }
+      return jsonResponse({ destinations: [] });
+    });
+
+    const result = await uploadImage(new Blob(["image"]), "image.png", {
       sourceUrl: "https://example.test/image.png",
+      pageUrl: "https://example.test/article",
       pageTitle: "Example",
     });
 
     const [url, options] = globalThis.fetch.mock.calls[0];
     expect(url).toBe("https://catalog.example.test/upload");
     expect(options.body.get("destination")).toBe("offsite-images");
+    expect(options.body.get("page_url")).toBe("https://example.test/article");
+    expect(result).toEqual({
+      ok: true,
+      assetId: "asset-123",
+      status: "saved",
+      assetUrl: "/api/assets/asset-123",
+    });
+  });
+
+  it("returns duplicate status and a safe API error", async () => {
+    globalThis.fetch = vi.fn(async (url) => {
+      if (url.endsWith("/upload")) {
+        return jsonResponse({
+          asset_id: "existing-1",
+          status: "duplicate",
+          asset_url: "/api/assets/existing-1",
+        });
+      }
+      return jsonResponse({ destinations: [] });
+    });
+
+    await expect(uploadImage(new Blob(["image"]), "same.png", {})).resolves.toEqual({
+      ok: true,
+      assetId: "existing-1",
+      status: "duplicate",
+      assetUrl: "/api/assets/existing-1",
+    });
+
+    globalThis.fetch = vi.fn(async () => jsonResponse({ detail: "Image destination is unavailable" }, 503));
+    await expect(uploadImage(new Blob(["image"]), "same.png", {})).resolves.toEqual({
+      ok: false,
+      error: "Image destination is unavailable",
+    });
   });
 });

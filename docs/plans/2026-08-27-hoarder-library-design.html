@@ -1,0 +1,347 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hoarder Library — Local Media Research and Channel Design</title>
+<style>
+  :root {
+    --bg: #090b12; --surface: #131724; --surface-2: #1a2030; --ink: #f4f0e8;
+    --muted: #9aa6ba; --line: #2a3448; --cyan: #5ee7e7; --cyan-soft: #12383e;
+    --pink: #ff6fae; --pink-soft: #432038; --amber: #ffc857; --amber-soft: #44351a;
+    --green: #8de38c; --green-soft: #18391f; --bad: #ff8b85; --bad-soft: #421f24;
+    --display: "Avenir Next", Futura, "Segoe UI", sans-serif;
+    --body: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --mono: Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0; color: var(--ink); font: 16px/1.62 var(--body);
+    background:
+      linear-gradient(rgba(255,255,255,.016) 1px, transparent 1px) 0 0 / 100% 4px,
+      radial-gradient(circle at 10% 0%, rgba(94,231,231,.08), transparent 32rem),
+      radial-gradient(circle at 90% 16%, rgba(255,111,174,.07), transparent 32rem),
+      var(--bg);
+  }
+  main { max-width: 1040px; margin: 0 auto; padding: 0 1.5rem 6rem; }
+  header.hero {
+    padding: 4.5rem 1.5rem 3rem; margin-bottom: 2rem; border-bottom: 1px solid var(--line);
+    background:
+      linear-gradient(115deg, rgba(94,231,231,.13), transparent 42%),
+      linear-gradient(245deg, rgba(255,111,174,.13), transparent 45%),
+      #0e1220;
+  }
+  .hero-inner { max-width: 1040px; margin: 0 auto; }
+  .kicker { color: var(--cyan); font: 700 .78rem var(--display); letter-spacing: .2em; text-transform: uppercase; }
+  h1 { max-width: 850px; margin: .7rem 0 .8rem; font: 800 clamp(2.3rem, 6vw, 4.8rem)/.98 var(--display); letter-spacing: -.045em; }
+  h2 { margin: 3.2rem 0 1rem; padding-bottom: .45rem; border-bottom: 1px solid var(--line); font: 750 1.55rem var(--display); }
+  h3 { margin: 1.5rem 0 .45rem; font: 700 1.05rem var(--display); }
+  p { margin: .45rem 0 1rem; max-width: 78ch; }
+  a { color: var(--cyan); }
+  .meta { color: var(--muted); font: .88rem var(--display); }
+  .meta span + span::before { content: "//"; margin: 0 .6rem; color: var(--line); }
+  .lede { max-width: 72ch; color: #dbe4f1; font-size: 1.08rem; }
+  .badge { display: inline-block; padding: .14rem .6rem; border-radius: 999px; font: 700 .7rem var(--display); letter-spacing: .04em; vertical-align: middle; }
+  .badge.approved, .badge.done { color: var(--green); background: var(--green-soft); }
+  .badge.todo { color: var(--muted); background: var(--surface-2); }
+  .badge.risk { color: var(--amber); background: var(--amber-soft); }
+  .badge.future { color: var(--pink); background: var(--pink-soft); }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .8rem; margin: 1.7rem 0; }
+  .stat { min-height: 110px; padding: 1.1rem; border: 1px solid var(--line); border-radius: 14px; background: linear-gradient(145deg, var(--surface-2), var(--surface)); }
+  .stat b { display: block; color: var(--cyan); font: 850 2.35rem/1 var(--display); }
+  .stat span { display: block; margin-top: .5rem; color: var(--muted); font: 700 .72rem var(--display); letter-spacing: .1em; text-transform: uppercase; }
+  .progress { display: flex; gap: 5px; height: 9px; margin: .9rem 0 2.2rem; }
+  .progress i { flex: 1; border-radius: 9px; background: var(--line); }
+  .progress i.approved { background: linear-gradient(90deg, var(--cyan), var(--pink)); }
+  .card { margin: 1rem 0; padding: 1.1rem 1.25rem; border: 1px solid var(--line); border-radius: 14px; background: rgba(19,23,36,.9); }
+  .card h3 { margin-top: 0; }
+  .goals { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  .lenses { display: grid; grid-template-columns: repeat(3, 1fr); gap: .8rem; }
+  .lens { padding: 1rem; border-top: 3px solid var(--cyan); background: var(--surface); border-radius: 0 0 12px 12px; }
+  .lens:nth-child(2) { border-color: var(--pink); }
+  .lens:nth-child(3) { border-color: var(--amber); }
+  .lens h3 { margin-top: 0; }
+  .callout { margin: 1.1rem 0; padding: .9rem 1.05rem; border-left: 4px solid var(--amber); border-radius: 0 10px 10px 0; background: var(--amber-soft); }
+  .callout.good { border-color: var(--green); background: var(--green-soft); }
+  .callout.info { border-color: var(--cyan); background: var(--cyan-soft); }
+  table { width: 100%; margin: .8rem 0 1.4rem; border-collapse: collapse; font-size: .9rem; }
+  th { color: var(--muted); font: 700 .72rem var(--display); letter-spacing: .08em; text-align: left; text-transform: uppercase; }
+  th, td { padding: .65rem .7rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tbody tr:hover { background: rgba(94,231,231,.025); }
+  code { padding: .1rem .35rem; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); color: #d9f8f8; font: .84em var(--mono); }
+  pre { overflow-x: auto; padding: 1rem; border: 1px solid var(--line); border-radius: 10px; background: #0b0e17; font: .82rem/1.55 var(--mono); }
+  pre code { padding: 0; border: 0; background: none; }
+  ul, ol { padding-left: 1.25rem; }
+  li { margin: .32rem 0; }
+  details { margin: .7rem 0; padding: .7rem .9rem; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+  summary { cursor: pointer; font-weight: 700; }
+  figure.diagram { margin: 1.4rem 0 .4rem; padding: 1rem; overflow-x: auto; border: 1px solid var(--line); border-radius: 16px; background: #101522; text-align: center; }
+  figure.diagram svg { max-width: 100%; height: auto; }
+  figure.diagram figcaption { margin-top: .7rem; color: var(--muted); font-size: .84rem; }
+  .timeline { margin: 1rem 0; padding: 0 0 0 1.5rem; border-left: 2px solid var(--line); list-style: none; }
+  .timeline li { position: relative; padding: 0 0 1.15rem; }
+  .timeline li::before { content: ""; position: absolute; left: -1.88rem; top: .35rem; width: .7rem; height: .7rem; border: 2px solid var(--muted); border-radius: 50%; background: var(--bg); }
+  .timeline li.approved::before { border-color: var(--cyan); background: var(--cyan-soft); }
+  .timeline b { font-family: var(--display); }
+  @media (max-width: 720px) {
+    .goals, .lenses { grid-template-columns: 1fr; }
+    table { display: block; overflow-x: auto; }
+    .meta span { display: block; }
+    .meta span + span::before { content: ""; margin: 0; }
+  }
+#hoarder-library-arch{font-family:"trebuchet ms",verdana,arial,sans-serif;font-size:16px;fill:#ccc;}@keyframes edge-animation-frame{from{stroke-dashoffset:0;}}@keyframes dash{to{stroke-dashoffset:0;}}#hoarder-library-arch .edge-animation-slow{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 50s linear infinite;stroke-linecap:round;}#hoarder-library-arch .edge-animation-fast{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 20s linear infinite;stroke-linecap:round;}#hoarder-library-arch .error-icon{fill:#a44141;}#hoarder-library-arch .error-text{fill:#ddd;stroke:#ddd;}#hoarder-library-arch .edge-thickness-normal{stroke-width:1px;}#hoarder-library-arch .edge-thickness-thick{stroke-width:3.5px;}#hoarder-library-arch .edge-pattern-solid{stroke-dasharray:0;}#hoarder-library-arch .edge-thickness-invisible{stroke-width:0;fill:none;}#hoarder-library-arch .edge-pattern-dashed{stroke-dasharray:3;}#hoarder-library-arch .edge-pattern-dotted{stroke-dasharray:2;}#hoarder-library-arch .marker{fill:lightgrey;stroke:lightgrey;}#hoarder-library-arch .marker.cross{stroke:lightgrey;}#hoarder-library-arch svg{font-family:"trebuchet ms",verdana,arial,sans-serif;font-size:16px;}#hoarder-library-arch p{margin:0;}#hoarder-library-arch .label{font-family:"trebuchet ms",verdana,arial,sans-serif;color:#ccc;}#hoarder-library-arch .cluster-label text{fill:#F9FFFE;}#hoarder-library-arch .cluster-label span{color:#F9FFFE;}#hoarder-library-arch .cluster-label span p{background-color:transparent;}#hoarder-library-arch .label text,#hoarder-library-arch span{fill:#ccc;color:#ccc;}#hoarder-library-arch .node rect,#hoarder-library-arch .node circle,#hoarder-library-arch .node ellipse,#hoarder-library-arch .node polygon,#hoarder-library-arch .node path{fill:#1f2020;stroke:#ccc;stroke-width:1px;}#hoarder-library-arch .rough-node .label text,#hoarder-library-arch .node .label text,#hoarder-library-arch .image-shape .label,#hoarder-library-arch .icon-shape .label{text-anchor:middle;}#hoarder-library-arch .node .katex path{fill:#000;stroke:#000;stroke-width:1px;}#hoarder-library-arch .rough-node .label,#hoarder-library-arch .node .label,#hoarder-library-arch .image-shape .label,#hoarder-library-arch .icon-shape .label{text-align:center;}#hoarder-library-arch .node.clickable{cursor:pointer;}#hoarder-library-arch .root .anchor path{fill:lightgrey!important;stroke-width:0;stroke:lightgrey;}#hoarder-library-arch .arrowheadPath{fill:lightgrey;}#hoarder-library-arch .edgePath .path{stroke:lightgrey;stroke-width:1px;}#hoarder-library-arch .flowchart-link{stroke:lightgrey;fill:none;}#hoarder-library-arch .edgeLabel{background-color:hsl(0, 0%, 34.4117647059%);text-align:center;}#hoarder-library-arch .edgeLabel p{background-color:hsl(0, 0%, 34.4117647059%);}#hoarder-library-arch .edgeLabel rect{opacity:0.5;background-color:hsl(0, 0%, 34.4117647059%);fill:hsl(0, 0%, 34.4117647059%);}#hoarder-library-arch .labelBkg{background-color:rgba(87.75, 87.75, 87.75, 0.5);}#hoarder-library-arch .cluster rect{fill:hsl(180, 1.5873015873%, 28.3529411765%);stroke:rgba(255, 255, 255, 0.25);stroke-width:1px;}#hoarder-library-arch .cluster text{fill:#F9FFFE;}#hoarder-library-arch .cluster span{color:#F9FFFE;}#hoarder-library-arch div.mermaidTooltip{position:absolute;text-align:center;max-width:200px;padding:2px;font-family:"trebuchet ms",verdana,arial,sans-serif;font-size:12px;background:hsl(20, 1.5873015873%, 12.3529411765%);border:1px solid rgba(255, 255, 255, 0.25);border-radius:2px;pointer-events:none;z-index:100;}#hoarder-library-arch .flowchartTitleText{text-anchor:middle;font-size:18px;fill:#ccc;}#hoarder-library-arch rect.text{fill:none;stroke-width:0;}#hoarder-library-arch .icon-shape,#hoarder-library-arch .image-shape{background-color:hsl(0, 0%, 34.4117647059%);text-align:center;}#hoarder-library-arch .icon-shape p,#hoarder-library-arch .image-shape p{background-color:hsl(0, 0%, 34.4117647059%);padding:2px;}#hoarder-library-arch .icon-shape .label rect,#hoarder-library-arch .image-shape .label rect{opacity:0.5;background-color:hsl(0, 0%, 34.4117647059%);fill:hsl(0, 0%, 34.4117647059%);}#hoarder-library-arch .label-icon{display:inline-block;height:1em;overflow:visible;vertical-align:-0.125em;}#hoarder-library-arch .node .label-icon path{fill:currentColor;stroke:revert;stroke-width:revert;}#hoarder-library-arch .node .neo-node{stroke:#ccc;}#hoarder-library-arch [data-look="neo"].node rect,#hoarder-library-arch [data-look="neo"].cluster rect,#hoarder-library-arch [data-look="neo"].node polygon{stroke:url(#hoarder-library-arch-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#hoarder-library-arch [data-look="neo"].swimlane.cluster rect{filter:none;}#hoarder-library-arch [data-look="neo"].node path{stroke:url(#hoarder-library-arch-gradient);stroke-width:1px;}#hoarder-library-arch [data-look="neo"].node .outer-path{filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#hoarder-library-arch [data-look="neo"].node .neo-line path{stroke:#ccc;filter:none;}#hoarder-library-arch [data-look="neo"].node circle{stroke:url(#hoarder-library-arch-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#hoarder-library-arch [data-look="neo"].node circle .state-start{fill:#000000;}#hoarder-library-arch [data-look="neo"].icon-shape .icon{fill:url(#hoarder-library-arch-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#hoarder-library-arch [data-look="neo"].icon-shape .icon-neo path{stroke:url(#hoarder-library-arch-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#hoarder-library-arch :root{--mermaid-font-family:"trebuchet ms",verdana,arial,sans-serif;}</style>
+</head>
+<body>
+<header class="hero">
+  <div class="hero-inner">
+    <div class="kicker">Local media research system · approved design</div>
+    <h1>Hoarder Library <span class="badge approved">Approved</span></h1>
+    <p class="lede">A storage-first browser for evaluating downloaded video, building source and curated channels, producing a real music library from selected videos, saving images from the browser, and eventually programming always-on household media channels.</p>
+    <p class="meta"><span>2026-08-27</span><span>workspace: Hoarder ecosystem</span><span>repo: <code>gmackie/hoarder-extension</code> @ <code>public-main</code></span><span>author: Codex + Graham</span></p>
+  </div>
+</header>
+<main>
+  <div class="stats">
+    <div class="stat"><b>6</b><span>V1 delivery phases</span></div>
+    <div class="stat"><b>3</b><span>Media lenses</span></div>
+    <div class="stat"><b>2</b><span>Channel types</span></div>
+    <div class="stat"><b>0</b><span>Writes to originals</span></div>
+  </div>
+  <div class="progress" aria-label="Design progress"><i class="approved"></i><i></i><i></i><i></i><i></i><i></i></div>
+
+  <h2>Overview</h2>
+  <p>Hoarder already captures downloadable media into user-controlled storage and has a small local catalog prototype. The next system makes the mounted files—not downloader history—the durable source of truth, then layers review, evaluation, music derivation, browser image capture, and channel curation on top.</p>
+  <p>The chosen shape is a single-user service hosted beside the media, exposed as a local browser/PWA over the private network. It uses configurable storage adapters, PostgreSQL, a durable worker queue, a FastAPI-compatible ingest boundary, and a richer web client. Original media remains immutable. Derived artifacts and editorial metadata are independently recoverable.</p>
+  <div class="callout good"><strong>Product principle:</strong> one unified asset catalog, three purpose-built lenses. Video, music, and images share provenance, tags, and collections without being forced into the same browsing experience.</div>
+
+  <h2>Measured Starting Point</h2>
+  <p>A read-only audit found a working prototype with a catalog API, SQLite database, media tabs, streaming routes, a browser image-upload endpoint, downloader synchronization, and FFmpeg audio extraction. It also found a substantial gap between indexed video rows and paths that resolve to real files.</p>
+  <p>This validates the product direction but rejects the current ingestion assumption: downloader history is useful metadata, not an authoritative inventory. The first release begins with filesystem reconciliation and explicit storage health.</p>
+
+  <h2>Architecture</h2>
+  <figure class="diagram">
+                <svg id="hoarder-library-arch" width="100%" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" class="flowchart" style="max-width: 2252.62px; background-color: transparent;" viewBox="0 0 2252.625 361.50238037109375" role="graphics-document document" aria-roledescription="flowchart-v2"><g><marker id="hoarder-library-arch_flowchart-v2-pointEnd" class="marker flowchart-v2" viewBox="0 0 10 10" refX="5" refY="5" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"/></marker><marker id="hoarder-library-arch_flowchart-v2-pointStart" class="marker flowchart-v2" viewBox="0 0 10 10" refX="4.5" refY="5" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" orient="auto"><path d="M 0 5 L 10 10 L 10 0 z" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"/></marker><marker id="hoarder-library-arch_flowchart-v2-pointEnd-margin" class="marker flowchart-v2" viewBox="0 0 11.5 14" refX="11.5" refY="7" markerUnits="userSpaceOnUse" markerWidth="10.5" markerHeight="14" orient="auto"><path d="M 0 0 L 11.5 7 L 0 14 z" class="arrowMarkerPath" style="stroke-width: 0; stroke-dasharray: 1, 0;"/></marker><marker id="hoarder-library-arch_flowchart-v2-pointStart-margin" class="marker flowchart-v2" viewBox="0 0 11.5 14" refX="1" refY="7" markerUnits="userSpaceOnUse" markerWidth="11.5" markerHeight="14" orient="auto"><polygon points="0,7 11.5,14 11.5,0" class="arrowMarkerPath" style="stroke-width: 0; stroke-dasharray: 1, 0;"/></marker><marker id="hoarder-library-arch_flowchart-v2-circleEnd" class="marker flowchart-v2" viewBox="0 0 10 10" refX="11" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"/></marker><marker id="hoarder-library-arch_flowchart-v2-circleStart" class="marker flowchart-v2" viewBox="0 0 10 10" refX="-1" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"/></marker><marker id="hoarder-library-arch_flowchart-v2-circleEnd-margin" class="marker flowchart-v2" viewBox="0 0 10 10" refY="5" refX="12.25" markerUnits="userSpaceOnUse" markerWidth="14" markerHeight="14" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 0; stroke-dasharray: 1, 0;"/></marker><marker id="hoarder-library-arch_flowchart-v2-circleStart-margin" class="marker flowchart-v2" viewBox="0 0 10 10" refX="-2" refY="5" markerUnits="userSpaceOnUse" markerWidth="14" markerHeight="14" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 0; stroke-dasharray: 1, 0;"/></marker><marker id="hoarder-library-arch_flowchart-v2-crossEnd" class="marker cross flowchart-v2" viewBox="0 0 11 11" refX="12" refY="5.2" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><path d="M 1,1 l 9,9 M 10,1 l -9,9" class="arrowMarkerPath" style="stroke-width: 2; stroke-dasharray: 1, 0;"/></marker><marker id="hoarder-library-arch_flowchart-v2-crossStart" class="marker cross flowchart-v2" viewBox="0 0 11 11" refX="-1" refY="5.2" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><path d="M 1,1 l 9,9 M 10,1 l -9,9" class="arrowMarkerPath" style="stroke-width: 2; stroke-dasharray: 1, 0;"/></marker><marker id="hoarder-library-arch_flowchart-v2-crossEnd-margin" class="marker cross flowchart-v2" viewBox="0 0 15 15" refX="17.7" refY="7.5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto"><path d="M 1,1 L 14,14 M 1,14 L 14,1" class="arrowMarkerPath" style="stroke-width: 2.5;"/></marker><marker id="hoarder-library-arch_flowchart-v2-crossStart-margin" class="marker cross flowchart-v2" viewBox="0 0 15 15" refX="-3.5" refY="7.5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto"><path d="M 1,1 L 14,14 M 1,14 L 14,1" class="arrowMarkerPath" style="stroke-width: 2.5; stroke-dasharray: 1, 0;"/></marker><g class="root"><g class="clusters"/><g class="edgePaths"><path d="M184.708,62L214.8,75.917C244.891,89.834,305.075,117.668,354.608,134.624C404.141,151.58,443.024,157.658,462.466,160.697L481.907,163.736" id="hoarder-library-arch-L_EXT_API_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style=";" data-edge="true" data-et="edge" data-id="L_EXT_API_0" data-points="W3sieCI6MTg0LjcwNzg3ODAxNjk1OTI4LCJ5Ijo2Mn0seyJ4IjozNjUuMjU3ODEyNSwieSI6MTQ1LjUwMjM3ODQ2Mzc0NTEyfSx7IngiOjQ4NS44NTkzNzUsInkiOjE2NC4zNTQxNzEyNjU0MDA1NH1d" data-look="classic" marker-end="url(#hoarder-library-arch_flowchart-v2-pointEnd)"/><path d="M204.052,133.502L230.92,124.169C257.787,114.836,311.523,96.169,361.602,86.836C411.682,77.502,458.107,77.502,481.319,77.502L504.531,77.502" id="hoarder-library-arch-L_ROOTS_SCAN_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style=";" data-edge="true" data-et="edge" data-id="L_ROOTS_SCAN_0" data-points="W3sieCI6MjA0LjA1MjI0MDIxMDg0MzM3LCJ5IjoxMzMuNTAyMzc4NDYzNzQ1MTJ9LHsieCI6MzY1LjI1NzgxMjUsInkiOjc3LjUwMjM3ODQ2Mzc0NTEyfSx7IngiOjUwOC41MzEyNSwieSI6NzcuNTAyMzc4NDYzNzQ1MTJ9XQ==" data-look="classic" marker-end="url(#hoarder-library-arch_flowchart-v2-pointEnd)"/><path d="M185.513,299.502L215.47,285.836C245.428,272.169,305.343,244.836,354.742,228.13C404.141,211.424,443.024,205.346,462.466,202.307L481.907,199.268" id="hoarder-library-arch-L_DOWNLOADERS_API_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style=";" data-edge="true" data-et="edge" data-id="L_DOWNLOADERS_API_0" data-points="W3sieCI6MTg1LjUxMjU0MzAwNDU4NzE0LCJ5IjoyOTkuNTAyMzc4NDYzNzQ1MX0seyJ4IjozNjUuMjU3ODEyNSwieSI6MjE3LjUwMjM3ODQ2Mzc0NTEyfSx7IngiOjQ4NS44NTkzNzUsInkiOjE5OC42NTA1ODU2NjIwODk3fV0=" data-look="classic" marker-end="url(#hoarder-library-arch_flowchart-v2-pointEnd)"/><path d="M682.594,77.502L690.539,77.502C698.484,77.502,714.375,77.502,726.016,81.197C737.656,84.892,745.047,92.282,748.742,95.977L752.437,99.672" id="hoarder-library-arch-L_SCAN_CATALOG_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style=";" data-edge="true" data-et="edge" data-id="L_SCAN_CATALOG_0" data-points="W3sieCI6NjgyLjU5Mzc1LCJ5Ijo3Ny41MDIzNzg0NjM3NDUxMn0seyJ4Ijo3MzAuMjY1NjI1LCJ5Ijo3Ny41MDIzNzg0NjM3NDUxMn0seyJ4Ijo3NTUuMjY1NjI1LCJ5IjoxMDIuNTAwNjAxNDAwMjM2MDh9XQ==" data-look="classic" marker-end="url(#hoarder-library-arch_flowchart-v2-pointEnd)"/><path d="M705.266,181.502L709.432,181.502C713.599,181.502,721.932,181.502,730.878,177.51C739.825,173.519,749.384,165.535,754.163,161.543L758.943,157.551" id="hoarder-library-arch-L_API_CATALOG_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style=";" data-edge="true" data-et="edge" data-id="L_API_CATALOG_0" data-points="W3sieCI6NzA1LjI2NTYyNSwieSI6MTgxLjUwMjM3ODQ2Mzc0NTEyfSx7IngiOjczMC4yNjU2MjUsInkiOjE4MS41MDIzNzg0NjM3NDUxMn0seyJ4Ijo3NjIuMDEyNjU1ODI0MTQ5OCwieSI6MTU0Ljk4Njc5MDMwOTk4MTEzfV0=" data-look="classic" marker-end="url(#hoarder-library-arch_flowchart-v2-pointEnd)"/><path d="M906.078,148.34L913.969,154.701C921.859,161.061,937.641,173.782,955.564,180.142C973.487,186.502,993.552,186.502,1003.585,186.502L1013.617,186.502" id="hoarder-library-arch-L_CATALOG_JOBS_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style=";" data-edge="true" data-et="edge" data-id="L_CATALOG_JOBS_0" data-points="W3sieCI6OTA2LjA3ODEyNSwieSI6MTQ4LjM0MDE1MDUwOTcyNDc3fSx7IngiOjk1My40MjE4NzUsInkiOjE4Ni41MDIzNzg0NjM3NDUxMn0seyJ4IjoxMDE3LjYxNzE4NzUsInkiOjE4Ni41MDIzNzg0NjM3NDUxMn1d" data-look="classic" marker-end="url(#hoarder-library-arch_flowchart-v2-pointEnd)"/><path d="M1210.023,186.502L1216.999,186.502C1223.974,186.502,1237.924,186.502,1255.766,188.739C1273.608,190.976,1295.341,195.449,1306.208,197.686L1317.074,199.922" id="hoarder-library-arch-L_JOBS_WORKERS_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style=";" data-edge="true" data-et="edge" data-id="L_JOBS_WORKERS_0" data-points="W3sieCI6MTIxMC4wMjM0Mzc1LCJ5IjoxODYuNTAyMzc4NDYzNzQ1MTJ9LHsieCI6MTI1MS44NzUsInkiOjE4Ni41MDIzNzg0NjM3NDUxMn0seyJ4IjoxMzIwLjk5MjE4NzUsInkiOjIwMC43Mjg4MDIzNjY2Mzk2fV0=" data-look="classic" marker-end="url(#hoarder-library-arch_flowchart-v2-pointEnd)"/><path d="M1483.977,217.502L1512.163,217.502C1540.349,217.502,1596.721,217.502,1645.074,217.502C1693.427,217.502,1733.76,217.502,1753.927,217.502L1774.094,217.502" id="hoarder-library-arch-L_WORKERS_DERIV_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style=";" data-edge="true" data-et="edge" data-id="L_WORKERS_DERIV_0" data-points="W3sieCI6MTQ4My45NzY1NjI1LCJ5IjoyMTcuNTAyMzc4NDYzNzQ1MTJ9LHsieCI6MTY1My4wOTM3NSwieSI6MjE3LjUwMjM3ODQ2Mzc0NTEyfSx7IngiOjE3NzguMDkzNzUsInkiOjIxNy41MDIzNzg0NjM3NDUxMn1d" data-look="classic" marker-end="url(#hoarder-library-arch_flowchart-v2-pointEnd)"/><path d="M1320.992,234.276L1309.473,236.647C1297.953,239.018,1274.914,243.76,1240.385,246.131C1205.857,248.502,1159.839,248.502,1110.096,248.502C1060.354,248.502,1006.888,248.502,966.679,234.404C926.469,220.306,899.516,192.109,886.04,178.01L872.563,163.912" id="hoarder-library-arch-L_WORKERS_CATALOG_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style=";" data-edge="true" data-et="edge" data-id="L_WORKERS_CATALOG_0" data-points="W3sieCI6MTMyMC45OTIxODc1LCJ5IjoyMzQuMjc1OTU0NTYwODUwNjR9LHsieCI6MTI1MS44NzUsInkiOjI0OC41MDIzNzg0NjM3NDUxMn0seyJ4IjoxMTEzLjgyMDMxMjUsInkiOjI0OC41MDIzNzg0NjM3NDUxMn0seyJ4Ijo5NTMuNDIxODc1LCJ5IjoyNDguNTAyMzc4NDYzNzQ1MTJ9LHsieCI6ODY5Ljc5OTI5MjEyOTEzNDIsInkiOjE2MS4wMjA0NzE1MzA0NDA1N31d" data-look="classic" marker-end="url(#hoarder-library-arch_flowchart-v2-pointEnd)"/><path d="M876.353,85.789L889.198,74.075C902.042,62.36,927.732,38.931,967.31,27.217C1006.888,15.502,1060.354,15.502,1110.096,15.502C1159.839,15.502,1205.857,15.502,1253.967,15.502C1302.078,15.502,1352.281,15.502,1419.151,15.502C1486.021,15.502,1569.557,15.502,1648.046,15.502C1726.534,15.502,1799.974,15.502,1856.747,15.502C1913.521,15.502,1953.628,15.502,1993.022,42.212C2032.417,68.922,2071.1,122.341,2090.441,149.051L2109.782,175.76" id="hoarder-library-arch-L_CATALOG_PWA_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style=";" data-edge="true" data-et="edge" data-id="L_CATALOG_PWA_0" data-points="W3sieCI6ODc2LjM1MjczNjA1MjI5MSwieSI6ODUuNzg5MDkyMzkwMDI5ODZ9LHsieCI6OTUzLjQyMTg3NSwieSI6MTUuNTAyMzc4NDYzNzQ1MTE3fSx7IngiOjExMTMuODIwMzEyNSwieSI6MTUuNTAyMzc4NDYzNzQ1MTE3fSx7IngiOjEyNTEuODc1LCJ5IjoxNS41MDIzNzg0NjM3NDUxMTd9LHsieCI6MTQwMi40ODQzNzUsInkiOjE1LjUwMjM3ODQ2Mzc0NTExN30seyJ4IjoxNjUzLjA5Mzc1LCJ5IjoxNS41MDIzNzg0NjM3NDUxMTd9LHsieCI6MTg3My40MTQwNjI1LCJ5IjoxNS41MDIzNzg0NjM3NDUxMTd9LHsieCI6MTk5My43MzQzNzUsInkiOjE1LjUwMjM3ODQ2Mzc0NTExN30seyJ4IjoyMTEyLjEyODEzOTI1Nzc1LCJ5IjoxNzl9XQ==" data-look="classic" marker-end="url(#hoarder-library-arch_flowchart-v2-pointEnd)"/><path d="M1968.734,217.502L1972.901,217.502C1977.068,217.502,1985.401,217.502,1993.07,217.21C2000.739,216.918,2007.744,216.334,2011.246,216.042L2014.748,215.75" id="hoarder-library-arch-L_DERIV_PWA_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style=";" data-edge="true" data-et="edge" data-id="L_DERIV_PWA_0" data-points="W3sieCI6MTk2OC43MzQzNzUsInkiOjIxNy41MDIzNzg0NjM3NDUxMn0seyJ4IjoxOTkzLjczNDM3NSwieSI6MjE3LjUwMjM3ODQ2Mzc0NTEyfSx7IngiOjIwMTguNzM0Mzc1LCJ5IjoyMTUuNDE3Nzg4MTU0ODZ9XQ==" data-look="classic" marker-end="url(#hoarder-library-arch_flowchart-v2-pointEnd)"/><path d="M174.114,187.502L205.971,205.502C237.829,223.502,301.543,259.502,371.785,277.502C442.026,295.502,518.794,295.502,579.629,295.502C640.464,295.502,685.365,295.502,724.549,295.502C763.734,295.502,797.203,295.502,834.396,295.502C871.589,295.502,912.505,295.502,959.697,295.502C1006.888,295.502,1060.354,295.502,1110.096,295.502C1159.839,295.502,1205.857,295.502,1253.967,295.502C1302.078,295.502,1352.281,295.502,1419.151,295.502C1486.021,295.502,1569.557,295.502,1648.046,295.502C1726.534,295.502,1799.974,295.502,1856.747,295.502C1913.521,295.502,1953.628,295.502,1989.177,285.448C2024.726,275.394,2055.718,255.286,2071.214,245.231L2086.71,235.177" id="hoarder-library-arch-L_ROOTS_PWA_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style=";" data-edge="true" data-et="edge" data-id="L_ROOTS_PWA_0" data-points="W3sieCI6MTc0LjExNDA2MjUsInkiOjE4Ny41MDIzNzg0NjM3NDUxMn0seyJ4IjozNjUuMjU3ODEyNSwieSI6Mjk1LjUwMjM3ODQ2Mzc0NTF9LHsieCI6NTk1LjU2MjUsInkiOjI5NS41MDIzNzg0NjM3NDUxfSx7IngiOjczMC4yNjU2MjUsInkiOjI5NS41MDIzNzg0NjM3NDUxfSx7IngiOjgzMC42NzE4NzUsInkiOjI5NS41MDIzNzg0NjM3NDUxfSx7IngiOjk1My40MjE4NzUsInkiOjI5NS41MDIzNzg0NjM3NDUxfSx7IngiOjExMTMuODIwMzEyNSwieSI6Mjk1LjUwMjM3ODQ2Mzc0NTF9LHsieCI6MTI1MS44NzUsInkiOjI5NS41MDIzNzg0NjM3NDUxfSx7IngiOjE0MDIuNDg0Mzc1LCJ5IjoyOTUuNTAyMzc4NDYzNzQ1MX0seyJ4IjoxNjUzLjA5Mzc1LCJ5IjoyOTUuNTAyMzc4NDYzNzQ1MX0seyJ4IjoxODczLjQxNDA2MjUsInkiOjI5NS41MDIzNzg0NjM3NDUxfSx7IngiOjE5OTMuNzM0Mzc1LCJ5IjoyOTUuNTAyMzc4NDYzNzQ1MX0seyJ4IjoyMDkwLjA2NjAwNjM3Mjk4MTUsInkiOjIzM31d" data-look="classic" marker-end="url(#hoarder-library-arch_flowchart-v2-pointEnd)"/><path d="M906.078,108.72L913.969,103.517C921.859,98.314,937.641,87.908,952.755,82.705C967.87,77.502,982.318,77.502,989.542,77.502L996.766,77.502" id="hoarder-library-arch-L_CATALOG_PLAYOUT_0" class="edge-thickness-normal edge-pattern-dotted edge-thickness-normal edge-pattern-solid flowchart-link" style=";" data-edge="true" data-et="edge" data-id="L_CATALOG_PLAYOUT_0" data-points="W3sieCI6OTA2LjA3ODEyNSwieSI6MTA4LjcyMDMwNzM0ODIyNjg0fSx7IngiOjk1My40MjE4NzUsInkiOjc3LjUwMjM3ODQ2Mzc0NTEyfSx7IngiOjEwMDAuNzY1NjI1LCJ5Ijo3Ny41MDIzNzg0NjM3NDUxMn1d" data-look="classic" marker-end="url(#hoarder-library-arch_flowchart-v2-pointEnd)"/><path d="M1226.875,77.502L1231.042,77.502C1235.208,77.502,1243.542,77.502,1251.208,77.502C1258.875,77.502,1265.875,77.502,1269.375,77.502L1272.875,77.502" id="hoarder-library-arch-L_PLAYOUT_SCREENS_0" class="edge-thickness-normal edge-pattern-dotted edge-thickness-normal edge-pattern-solid flowchart-link" style=";" data-edge="true" data-et="edge" data-id="L_PLAYOUT_SCREENS_0" data-points="W3sieCI6MTIyNi44NzUsInkiOjc3LjUwMjM3ODQ2Mzc0NTEyfSx7IngiOjEyNTEuODc1LCJ5Ijo3Ny41MDIzNzg0NjM3NDUxMn0seyJ4IjoxMjc2Ljg3NSwieSI6NzcuNTAyMzc4NDYzNzQ1MTJ9XQ==" data-look="classic" marker-end="url(#hoarder-library-arch_flowchart-v2-pointEnd)"/></g><g class="edgeLabels"><g class="edgeLabel" transform="translate(330.37831, 129.37099)"><g class="label" data-id="L_EXT_API_0" transform="translate(-95.6015625, -12)"><foreignObject width="191.203125" height="24"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel"><p>video URL or image upload</p></span></div></foreignObject></g></g><g class="edgeLabel"><g class="label" data-id="L_ROOTS_SCAN_0" transform="translate(0, 0)"><foreignObject width="0" height="0"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel"></span></div></foreignObject></g></g><g class="edgeLabel" transform="translate(330.91292, 233.17056)"><g class="label" data-id="L_DOWNLOADERS_API_0" transform="translate(-54.2578125, -12)"><foreignObject width="108.515625" height="24"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel"><p>metadata hints</p></span></div></foreignObject></g></g><g class="edgeLabel"><g class="label" data-id="L_SCAN_CATALOG_0" transform="translate(0, 0)"><foreignObject width="0" height="0"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel"></span></div></foreignObject></g></g><g class="edgeLabel"><g class="label" data-id="L_API_CATALOG_0" transform="translate(0, 0)"><foreignObject width="0" height="0"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel"></span></div></foreignObject></g></g><g class="edgeLabel"><g class="label" data-id="L_CATALOG_JOBS_0" transform="translate(0, 0)"><foreignObject width="0" height="0"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel"></span></div></foreignObject></g></g><g class="edgeLabel"><g class="label" data-id="L_JOBS_WORKERS_0" transform="translate(0, 0)"><foreignObject width="0" height="0"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel"></span></div></foreignObject></g></g><g class="edgeLabel" transform="translate(1653.09375, 217.50237846374512)"><g class="label" data-id="L_WORKERS_DERIV_0" transform="translate(-100, -24)"><foreignObject width="200" height="48"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table; white-space: break-spaces; line-height: 1.5; max-width: 200px; text-align: center; width: 200px;"><span class="edgeLabel"><p>thumbnails audio transcripts OCR</p></span></div></foreignObject></g></g><g class="edgeLabel"><g class="label" data-id="L_WORKERS_CATALOG_0" transform="translate(0, 0)"><foreignObject width="0" height="0"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel"></span></div></foreignObject></g></g><g class="edgeLabel"><g class="label" data-id="L_CATALOG_PWA_0" transform="translate(0, 0)"><foreignObject width="0" height="0"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel"></span></div></foreignObject></g></g><g class="edgeLabel"><g class="label" data-id="L_DERIV_PWA_0" transform="translate(0, 0)"><foreignObject width="0" height="0"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel"></span></div></foreignObject></g></g><g class="edgeLabel" transform="translate(1113.8203125, 295.5023784637451)"><g class="label" data-id="L_ROOTS_PWA_0" transform="translate(-71.84375, -12)"><foreignObject width="143.6875" height="24"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel"><p>read-only streaming</p></span></div></foreignObject></g></g><g class="edgeLabel" transform="translate(953.421875, 77.50237846374512)"><g class="label" data-id="L_CATALOG_PLAYOUT_0" transform="translate(-22.34375, -12)"><foreignObject width="44.6875" height="24"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel"><p>future</p></span></div></foreignObject></g></g><g class="edgeLabel"><g class="label" data-id="L_PLAYOUT_SCREENS_0" transform="translate(0, 0)"><foreignObject width="0" height="0"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel"></span></div></foreignObject></g></g></g><g class="nodes"><g class="node default" id="hoarder-library-arch-flowchart-EXT-0" data-look="classic" transform="translate(126.328125, 35)"><rect class="basic label-container" style="" x="-95.46875" y="-27" width="190.9375" height="54"/><g class="label" style="" transform="translate(-65.46875, -12)"><rect/><foreignObject width="130.9375" height="24"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="nodeLabel"><p>Browser extension</p></span></div></foreignObject></g></g><g class="node default" id="hoarder-library-arch-flowchart-API-1" data-look="classic" transform="translate(595.5625, 181.50237846374512)"><rect class="basic label-container" style="" x="-109.703125" y="-27" width="219.40625" height="54"/><g class="label" style="" transform="translate(-79.703125, -12)"><rect/><foreignObject width="159.40625" height="24"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="nodeLabel"><p>Catalog and ingest API</p></span></div></foreignObject></g></g><g class="node default" id="hoarder-library-arch-flowchart-ROOTS-2" data-look="classic" transform="translate(126.328125, 160.50237846374512)"><rect class="basic label-container" style="" x="-118.328125" y="-27" width="236.65625" height="54"/><g class="label" style="" transform="translate(-88.328125, -12)"><rect/><foreignObject width="176.65625" height="24"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="nodeLabel"><p>Configured storage roots</p></span></div></foreignObject></g></g><g class="node default" id="hoarder-library-arch-flowchart-SCAN-3" data-look="classic" transform="translate(595.5625, 77.50237846374512)"><rect class="basic label-container" style="" x="-87.03125" y="-27" width="174.0625" height="54"/><g class="label" style="" transform="translate(-57.03125, -12)"><rect/><foreignObject width="114.0625" height="24"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="nodeLabel"><p>Storage scanner</p></span></div></foreignObject></g></g><g class="node default" id="hoarder-library-arch-flowchart-DOWNLOADERS-4" data-look="classic" transform="translate(126.328125, 326.5023784637451)"><rect class="basic label-container" style="" x="-95.71875" y="-27" width="191.4375" height="54"/><g class="label" style="" transform="translate(-65.71875, -12)"><rect/><foreignObject width="131.4375" height="24"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="nodeLabel"><p>Download services</p></span></div></foreignObject></g></g><g class="node default" id="hoarder-library-arch-flowchart-CATALOG-7" data-look="classic" transform="translate(830.671875, 123)"><path d="M0,13.669839111715389 a75.40625,13.669839111715389 0,0,0 150.8125,0 a75.40625,13.669839111715389 0,0,0 -150.8125,0 l0,52.66983911171539 a75.40625,13.669839111715389 0,0,0 150.8125,0 l0,-52.66983911171539" class="basic label-container outer-path" style="" transform="translate(-75.40625, -40.004758667573086)"/><g class="label" style="" transform="translate(-67.90625, -2)"><rect/><foreignObject width="135.8125" height="24"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="nodeLabel"><p>PostgreSQL catalog</p></span></div></foreignObject></g></g><g class="node default" id="hoarder-library-arch-flowchart-JOBS-11" data-look="classic" transform="translate(1113.8203125, 186.50237846374512)"><rect class="basic label-container" style="" x="-96.203125" y="-27" width="192.40625" height="54"/><g class="label" style="" transform="translate(-66.203125, -12)"><rect/><foreignObject width="132.40625" height="24"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="nodeLabel"><p>Durable job queue</p></span></div></foreignObject></g></g><g class="node default" id="hoarder-library-arch-flowchart-WORKERS-13" data-look="classic" transform="translate(1402.484375, 217.50237846374512)"><rect class="basic label-container" style="" x="-81.4921875" y="-27" width="162.984375" height="54"/><g class="label" style="" transform="translate(-51.4921875, -12)"><rect/><foreignObject width="102.984375" height="24"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="nodeLabel"><p>Media workers</p></span></div></foreignObject></g></g><g class="node default" id="hoarder-library-arch-flowchart-DERIV-15" data-look="classic" transform="translate(1873.4140625, 217.50237846374512)"><rect class="basic label-container" style="" x="-95.3203125" y="-27" width="190.640625" height="54"/><g class="label" style="" transform="translate(-65.3203125, -12)"><rect/><foreignObject width="130.640625" height="24"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="nodeLabel"><p>Derivative storage</p></span></div></foreignObject></g></g><g class="node default" id="hoarder-library-arch-flowchart-PWA-19" data-look="classic" transform="translate(2131.6796875, 206)"><rect class="basic label-container" style="" x="-112.9453125" y="-27" width="225.890625" height="54"/><g class="label" style="" transform="translate(-82.9453125, -12)"><rect/><foreignObject width="165.890625" height="24"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="nodeLabel"><p>Local browser and PWA</p></span></div></foreignObject></g></g><g class="node default" id="hoarder-library-arch-flowchart-PLAYOUT-25" data-look="classic" transform="translate(1113.8203125, 77.50237846374512)"><rect class="basic label-container" style="" x="-113.0546875" y="-27" width="226.109375" height="54"/><g class="label" style="" transform="translate(-83.0546875, -12)"><rect/><foreignObject width="166.109375" height="24"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="nodeLabel"><p>Scheduling and playout</p></span></div></foreignObject></g></g><g class="node default" id="hoarder-library-arch-flowchart-SCREENS-27" data-look="classic" transform="translate(1402.484375, 77.50237846374512)"><rect class="basic label-container" style="" x="-125.609375" y="-27" width="251.21875" height="54"/><g class="label" style="" transform="translate(-95.609375, -12)"><rect/><foreignObject width="191.21875" height="24"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="nodeLabel"><p>TVs and household screens</p></span></div></foreignObject></g></g></g></g></g><defs><filter id="hoarder-library-arch-drop-shadow" height="130%" width="130%"><feDropShadow dx="4" dy="4" stdDeviation="0" flood-opacity="0.06" flood-color="#FFFFFF"/></filter></defs><defs><filter id="hoarder-library-arch-drop-shadow-small" height="150%" width="150%"><feDropShadow dx="2" dy="2" stdDeviation="0" flood-opacity="0.06" flood-color="#FFFFFF"/></filter></defs><linearGradient id="hoarder-library-arch-gradient" gradientUnits="objectBoundingBox" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="#cccccc" stop-opacity="1"/><stop offset="100%" stop-color="hsl(180, 0%, 18.3529411765%)" stop-opacity="1"/></linearGradient></svg>
+    <figcaption>Storage-first catalog, enrichment workers, local research UI, and a deliberately separate future playout plane.</figcaption>
+  </figure>
+  <details class="mermaid-source">
+    <summary>Diagram source (mermaid)</summary>
+    <pre><code>flowchart LR
+  EXT[Browser extension] --&gt;|video URL or image upload| API[Catalog and ingest API]
+  ROOTS[Configured storage roots] --&gt; SCAN[Storage scanner]
+  DOWNLOADERS[Download services] --&gt;|metadata hints| API
+  SCAN --&gt; CATALOG[(PostgreSQL catalog)]
+  API --&gt; CATALOG
+  CATALOG --&gt; JOBS[Durable job queue]
+  JOBS --&gt; WORKERS[Media workers]
+  WORKERS --&gt;|thumbnails audio transcripts OCR| DERIV[Derivative storage]
+  WORKERS --&gt; CATALOG
+  CATALOG --&gt; PWA[Local browser and PWA]
+  DERIV --&gt; PWA
+  ROOTS --&gt;|read-only streaming| PWA
+  CATALOG -. future .-&gt; PLAYOUT[Scheduling and playout]
+  PLAYOUT -.-&gt; SCREENS[TVs and household screens]</code></pre>
+  </details>
+
+  <h3>Runtime components</h3>
+  <table>
+    <thead><tr><th>Component</th><th>Responsibility</th><th>Boundary</th></tr></thead>
+    <tbody>
+      <tr><td>Catalog API</td><td>Assets, evaluations, channels, uploads, streaming authorization, and compatibility endpoints.</td><td>Never accepts arbitrary filesystem paths.</td></tr>
+      <tr><td>Storage scanner</td><td>Inventories configured roots, fingerprints files, reconciles moves, and records availability.</td><td>Original roots mounted read-only.</td></tr>
+      <tr><td>Media worker</td><td>FFprobe, thumbnails, FFmpeg extraction, artwork, and later transcription/OCR/embeddings.</td><td>Writes only temporary and derivative roots.</td></tr>
+      <tr><td>Web/PWA</td><td>Rapid review, playback, search, evaluation, music management, and channel building.</td><td>Single-user over a private network in v1.</td></tr>
+      <tr><td>PostgreSQL</td><td>Catalog, provenance, editorial state, jobs, full-text search, and future vector indexes.</td><td>Backed up independently of media.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Goals &amp; Non-goals</h2>
+  <div class="goals">
+    <div class="card">
+      <h3>Goals</h3>
+      <ul>
+        <li>Browse every supported file on every configured online root.</li>
+        <li>Retain original source channels and build reusable curated channels.</li>
+        <li>Evaluate with ratings, notes, tags, workflow state, and optional rubrics.</li>
+        <li>Create a properly tagged music library while retaining video provenance.</li>
+        <li>Save original images from the browser into the same catalog.</li>
+        <li>Make failures, offline disks, and missing files explicit and recoverable.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>V1 non-goals</h3>
+      <ul>
+        <li>Multi-user accounts, permissions, or collaboration.</li>
+        <li>Automatic destructive moves or renames of archived originals.</li>
+        <li>Transcription, OCR, semantic embeddings, or face recognition.</li>
+        <li>Continuous channel scheduling, EPG generation, or TV playout.</li>
+        <li>Replacing downloader services or a future movie/TV media server.</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2>Catalog Model</h2>
+  <table>
+    <thead><tr><th>Entity</th><th>Purpose</th><th>Key invariant</th></tr></thead>
+    <tbody>
+      <tr><td><code>assets</code></td><td>Logical video, audio track, image, movie, or episode.</td><td>Editorial identity survives path moves and duplicate copies.</td></tr>
+      <tr><td><code>asset_files</code></td><td>Physical copies with storage root, relative path, fingerprint, codecs, and availability.</td><td>No absolute path is accepted from a client.</td></tr>
+      <tr><td><code>sources</code> / <code>source_channels</code></td><td>Original URL, platform, publisher, creator, and publication metadata.</td><td>Imported metadata never overwrites user edits silently.</td></tr>
+      <tr><td><code>derivatives</code></td><td>Thumbnails, extracted audio, waveform, proxy, transcript, OCR, and embeddings.</td><td>Every derivative records its source asset, recipe, and tool version.</td></tr>
+      <tr><td><code>artists</code> / <code>releases</code> / <code>tracks</code></td><td>First-class music navigation and tagging.</td><td>A track links back to its source video and selected time range.</td></tr>
+      <tr><td><code>curated_channels</code> / <code>channel_items</code></td><td>Reusable editorial collections, ordering, and channel-specific status.</td><td>One asset may belong to many channels without file duplication.</td></tr>
+      <tr><td><code>evaluations</code></td><td>Ratings, notes, rubric scores, and review state.</td><td>Global evaluation and channel-specific evaluation remain distinguishable.</td></tr>
+      <tr><td><code>tags</code> / <code>taggings</code></td><td>Shared vocabulary across asset types and channels.</td><td>Tags are normalized, searchable, and never encoded in filenames.</td></tr>
+      <tr><td><code>jobs</code> / <code>ingest_events</code></td><td>Durable execution history, retries, and diagnostics.</td><td>Jobs are idempotent and safe to retry after interruption.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Product Lenses</h2>
+  <div class="lenses">
+    <div class="lens"><h3>Video</h3><p>Grid and table browsing, source channels, playback, rapid evaluation, candidate workflow, and curated-channel assignment.</p></div>
+    <div class="lens"><h3>Music</h3><p>Music candidates, extraction jobs, artist/album/track editing, artwork, playlists, and provenance back to source video.</p></div>
+    <div class="lens"><h3>Images</h3><p>Browser-saved originals, source pages, dimensions, duplicate detection, tagging, collections, and future slideshow use.</p></div>
+  </div>
+
+  <h3>Primary screens</h3>
+  <ul>
+    <li><strong>Inbox:</strong> newly discovered assets and music suggestions awaiting a decision.</li>
+    <li><strong>Videos, Music, Images:</strong> media-specific browsing with shared search and filters.</li>
+    <li><strong>Source Channels:</strong> original creators, publishers, feeds, and websites.</li>
+    <li><strong>Curated Channels:</strong> ordered collections with candidate → reviewed → selected → used state.</li>
+    <li><strong>Asset Detail:</strong> player/viewer beside metadata, provenance, evaluation, tags, and memberships.</li>
+    <li><strong>Jobs:</strong> current and failed scans, extraction, thumbnails, imports, and retry actions.</li>
+  </ul>
+
+  <h2>Music Derivation Contract</h2>
+  <ol>
+    <li>Classifier suggests music from source metadata and detected properties; a user confirms it.</li>
+    <li>User selects the full program or a time range and chooses archival plus playback outputs.</li>
+    <li>Worker extracts with FFmpeg to a temporary path, validates with FFprobe, and atomically activates the derivative.</li>
+    <li>System proposes artist, release, track, artwork, genre, year, and track number without overwriting confirmed metadata.</li>
+    <li>Reviewed audio becomes a first-class track while retaining source video, URL, channel, timestamps, and extraction recipe.</li>
+  </ol>
+  <div class="callout"><strong>Default formats:</strong> retain a lossless archival derivative when the source warrants it and create a broadly compatible playback derivative. Exact codecs remain configurable rather than embedded in the catalog model.</div>
+
+  <h2>Failure and Recovery Semantics</h2>
+  <ul>
+    <li>Every storage root reports <code>online</code>, <code>offline</code>, or <code>degraded</code>.</li>
+    <li>An offline root never causes deletion or “missing” transitions. Only a completed scan of an online root may mark a file missing.</li>
+    <li>Scans use path/size/mtime first and cryptographic hashes when identity is ambiguous.</li>
+    <li>Moves reconnect to the same logical asset. Duplicate copies become multiple <code>asset_files</code>.</li>
+    <li>Worker output is temporary until tool exit, file existence, size, and FFprobe validation all pass.</li>
+    <li>Failed jobs retain stage, safe error summary, attempt count, and retry eligibility.</li>
+    <li>Schema migrations and database backups are versioned and tested with disposable restores.</li>
+  </ul>
+
+  <h2>Milestones</h2>
+  <ul class="timeline">
+    <li class="approved"><b>Design — accepted</b><br>Product model, architecture, safety boundary, and v1 scope agreed.</li>
+    <li><b>Phase 0 — Establish baseline</b><br>Version the server prototype, snapshot state, and build reconciliation fixtures.</li>
+    <li><b>Phase 1 — Storage-first catalog</b><br>PostgreSQL schema, migrations, roots, scanner, fingerprints, and importer.</li>
+    <li><b>Phase 2 — Library browser</b><br>Local PWA, streaming, Inbox, three media lenses, filters, and jobs.</li>
+    <li><b>Phase 3 — Editorial channels</b><br>Evaluations, tags, source channels, curated channels, and rapid review.</li>
+    <li><b>Phase 4 — Music library</b><br>Suggestion, confirmation, extraction, validation, tagging, artwork, and playback.</li>
+    <li><b>Phase 5 — Browser images and hardening</b><br>Image context menu contract, duplicate handling, backups, recovery, and rollout.</li>
+    <li><b>Future — Enrichment and playout</b><br>Transcription, OCR, semantic search, movie/TV adapters, schedules, and household screens.</li>
+  </ul>
+
+  <h2>Phase 0 — Establish a Recoverable Baseline <span class="badge todo">Todo</span></h2>
+  <table>
+    <thead><tr><th>Task</th><th>Files</th><th>Verification</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td>Create a version-controlled Hoarder server workspace; import prototype code without live data.</td><td><code>apps/api/</code>, <code>apps/web/</code>, <code>compose.yaml</code></td><td>Clean clone builds without private configuration.</td><td><span class="badge todo">Todo</span></td></tr>
+      <tr><td>Snapshot the existing SQLite catalog and record a sanitized inventory baseline.</td><td><code>tools/audit_catalog.py</code>, backup manifest</td><td>Backup opens; counts reconcile; no media copied.</td><td><span class="badge todo">Todo</span></td></tr>
+      <tr><td>Create representative temporary-root fixtures for video, audio, images, duplicates, moves, and offline roots.</td><td><code>tests/fixtures/media/</code></td><td>Fixtures exercise every scanner state without live disks.</td><td><span class="badge todo">Todo</span></td></tr>
+    </tbody>
+  </table>
+
+  <h2>Phase 1 — Storage-first Catalog <span class="badge todo">Todo</span></h2>
+  <table>
+    <thead><tr><th>Task</th><th>Files</th><th>Verification</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td>Add PostgreSQL, migrations, database health, backup, and disposable restore.</td><td><code>compose.yaml</code>, <code>migrations/</code>, <code>tools/backup.sh</code></td><td>Fresh migrate and backup/restore produce matching schema and row counts.</td><td><span class="badge todo">Todo</span></td></tr>
+      <tr><td>Implement configurable storage roots with sentinel-based health.</td><td><code>apps/api/storage/</code></td><td>Offline-root test produces zero missing/deleted transitions.</td><td><span class="badge todo">Todo</span></td></tr>
+      <tr><td>Implement stable scanning, staged fingerprints, moves, duplicates, and missing-state transitions.</td><td><code>apps/worker/scanner/</code></td><td>Second identical scan creates zero new assets; move retains asset ID.</td><td><span class="badge todo">Todo</span></td></tr>
+      <tr><td>Import downloader and prototype metadata as provenance hints.</td><td><code>apps/api/importers/</code></td><td>Importer never invents a resolvable file when storage scan has none.</td><td><span class="badge todo">Todo</span></td></tr>
+    </tbody>
+  </table>
+
+  <h2>Phase 2 — Library Browser <span class="badge todo">Todo</span></h2>
+  <table>
+    <thead><tr><th>Task</th><th>Files</th><th>Verification</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td>Build typed catalog, detail, search, filter, and job APIs.</td><td><code>apps/api/routes/</code>, <code>packages/contracts/</code></td><td>Contract tests cover pagination, malformed filters, and unavailable files.</td><td><span class="badge todo">Todo</span></td></tr>
+      <tr><td>Implement ID-based streaming with HTTP Range and root containment.</td><td><code>apps/api/streaming/</code></td><td>Seek tests pass; traversal and stale-file tests fail closed.</td><td><span class="badge todo">Todo</span></td></tr>
+      <tr><td>Build Inbox, Videos, Music, Images, Source Channels, and Jobs views.</td><td><code>apps/web/src/</code></td><td>Browser workflow covers discovery → inspect → filter → play/view.</td><td><span class="badge todo">Todo</span></td></tr>
+      <tr><td>Add keyboard-first rapid review and accessible focus/status behavior.</td><td><code>apps/web/src/review/</code></td><td>Keyboard-only test completes a ten-item review queue.</td><td><span class="badge todo">Todo</span></td></tr>
+    </tbody>
+  </table>
+
+  <h2>Phase 3 — Evaluation and Channels <span class="badge todo">Todo</span></h2>
+  <table>
+    <thead><tr><th>Task</th><th>Files</th><th>Verification</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td>Add ratings, notes, favorites, normalized tags, and workflow states.</td><td><code>migrations/</code>, <code>apps/api/evaluations/</code>, <code>apps/web/src/detail/</code></td><td>Edits persist across rescans, moves, and duplicate reconciliation.</td><td><span class="badge todo">Todo</span></td></tr>
+      <tr><td>Add customizable rubrics and channel-specific evaluations.</td><td><code>apps/api/rubrics/</code>, <code>apps/web/src/rubrics/</code></td><td>Same asset carries different scores in two curated channels.</td><td><span class="badge todo">Todo</span></td></tr>
+      <tr><td>Add source-channel views and many-to-many curated channels with ordering.</td><td><code>apps/api/channels/</code>, <code>apps/web/src/channels/</code></td><td>Reorder is stable and never duplicates or moves media files.</td><td><span class="badge todo">Todo</span></td></tr>
+    </tbody>
+  </table>
+
+  <h2>Phase 4 — Music Library <span class="badge todo">Todo</span></h2>
+  <table>
+    <thead><tr><th>Task</th><th>Files</th><th>Verification</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td>Add music-candidate suggestions with explicit confirmation.</td><td><code>apps/worker/classifiers/</code>, <code>apps/web/src/music/inbox/</code></td><td>Non-music fixtures are never extracted without confirmation.</td><td><span class="badge todo">Todo</span></td></tr>
+      <tr><td>Add range-aware FFmpeg recipes, temporary output, FFprobe validation, and atomic activation.</td><td><code>apps/worker/audio/</code></td><td>Interrupted job leaves no active derivative; retry produces one result.</td><td><span class="badge todo">Todo</span></td></tr>
+      <tr><td>Add artists, releases, tracks, artwork, editable tags, and source lineage.</td><td><code>migrations/</code>, <code>apps/api/music/</code>, <code>apps/web/src/music/</code></td><td>Track playback and metadata survive source-video move.</td><td><span class="badge todo">Todo</span></td></tr>
+    </tbody>
+  </table>
+
+  <h2>Phase 5 — Browser Images and Hardening <span class="badge todo">Todo</span></h2>
+  <table>
+    <thead><tr><th>Task</th><th>Files</th><th>Verification</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td>Preserve the extension upload contract while returning catalog asset IDs and safe status.</td><td><code>apps/api/routes/images.py</code>, extension contract tests</td><td>Right-click image save appears in Inbox with source page and destination.</td><td><span class="badge todo">Todo</span></td></tr>
+      <tr><td>Validate MIME, decoded content, size, duplicate fingerprints, and storage availability.</td><td><code>apps/api/uploads/</code></td><td>Spoofed, oversized, duplicate, and offline-destination tests behave explicitly.</td><td><span class="badge todo">Todo</span></td></tr>
+      <tr><td>Run migration, restore, load, browser, and target-hardware acceptance gates.</td><td><code>tests/integration/</code>, <code>runbooks/rollout.html</code></td><td>Fresh end-to-end proof covers both storage roots and all three media lenses.</td><td><span class="badge todo">Todo</span></td></tr>
+    </tbody>
+  </table>
+
+  <h2>Risks &amp; Mitigations</h2>
+  <table>
+    <thead><tr><th>Risk</th><th>Severity</th><th>Mitigation</th></tr></thead>
+    <tbody>
+      <tr><td>Offline removable/network storage is mistaken for deletion.</td><td><span class="badge risk">High</span></td><td>Sentinel health, three-state root status, and deletion transitions only after a completed online scan.</td></tr>
+      <tr><td>Prototype history paths contaminate the new catalog.</td><td><span class="badge risk">High</span></td><td>Import as untrusted metadata hints; only the storage scanner establishes physical availability.</td></tr>
+      <tr><td>FFmpeg job damages or replaces an original.</td><td><span class="badge risk">High</span></td><td>Read-only original mounts, separate derivative root, temporary output, validation, and atomic rename.</td></tr>
+      <tr><td>Changing paths loses evaluation and channel work.</td><td><span class="badge risk">High</span></td><td>Logical asset identity separated from physical file locations and reconciled through fingerprints.</td></tr>
+      <tr><td>Rich enrichment stalls delivery of a trustworthy catalog.</td><td><span class="badge risk">Medium</span></td><td>Transcription, OCR, embeddings, and automated matching are post-v1 modules behind durable jobs.</td></tr>
+      <tr><td>The prototype remains an unversioned production snowflake.</td><td><span class="badge risk">High</span></td><td>Phase 0 creates a clean repository, sanitized configuration, migrations, and reproducible Compose deployment before feature edits.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Verification Gates</h2>
+  <ul>
+    <li><strong>Inventory:</strong> every supported file on an online configured root is cataloged, explicitly quarantined, or reported unsupported.</li>
+    <li><strong>Idempotence:</strong> two unchanged scans create zero new logical assets, files, or derivatives.</li>
+    <li><strong>Offline safety:</strong> disconnect simulation creates zero deletion or missing transitions.</li>
+    <li><strong>Immutability:</strong> before/after checksums for original fixtures are identical across every worker test.</li>
+    <li><strong>Streaming:</strong> representative codecs support start, seek, resume, and unavailable-file responses through ID-based routes.</li>
+    <li><strong>Music:</strong> full and clipped extraction pass FFprobe; interruption and retry leave exactly one activated derivative.</li>
+    <li><strong>Images:</strong> browser context-menu upload preserves original bytes and records source metadata without exposing configuration.</li>
+    <li><strong>Editorial durability:</strong> ratings, notes, tags, and memberships survive rescans, moves, service restarts, backup, and restore.</li>
+    <li><strong>Deployment:</strong> exact image digests, migrations, health endpoints, database restore, and target-hardware browser proof are recorded separately.</li>
+  </ul>
+
+  <h2>Future Modules <span class="badge future">After V1</span></h2>
+  <p>Once catalog identity and editorial state are dependable, enrichment workers can add transcription, chapters, OCR, detected topics, and semantic search. Those outputs remain replaceable derivatives.</p>
+  <p>The later playout plane will import or reference the household movie/TV collection, compile curated channels into schedules or rules, generate an electronic program guide where useful, and target specific TVs or displays. Scheduling and playback consume the catalog API; they do not redefine asset identity or mutate the archive.</p>
+
+  <h2>Open Questions</h2>
+  <div class="callout info"><strong>Repository boundary:</strong> recommended default is a new <code>hoarder</code> service repository or monorepo, with the browser extension retained as its own releaseable client until a deliberate consolidation is justified.</div>
+  <div class="callout info"><strong>Frontend stack:</strong> recommended default is a typed React PWA backed by the existing Python/FastAPI direction. The API contract remains independent so the UI can change without rescanning media.</div>
+  <div class="callout info"><strong>Audio formats:</strong> choose archival and playback codec defaults during Phase 4 using representative source-quality measurements; keep recipes configurable and versioned.</div>
+</main>
+</body>
+</html>
